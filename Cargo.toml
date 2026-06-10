@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["crates/mpd-schema"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Kato-emb/mpd-schema"
+
+# Rust lints. CI が -D warnings で warning を error に昇格させる。
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unnameable_types = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
+# restriction 群は「信頼できない入力に対する panic-free / overflow-checked」の
+# 姿勢を強制する。テストでの緩和はテストモジュール側で
+# `#![allow(..., reason = "...")]` を書く。
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+# リポジトリ規約の機械的強制。
+mod_module_files = "deny"                # .rules: mod.rs 禁止
+allow_attributes_without_reason = "deny" # .rules: #[allow()] は reason 必須
+exhaustive_structs = "deny"              # ADR-0002: #[non_exhaustive] + new()
+exhaustive_enums = "deny"                # 同上。variant 追加を non-breaking に保つ
+
+# ドキュメント衛生。いずれも allow-by-default のため明示。
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+too_long_first_doc_paragraph = "warn"
+doc_markdown = "warn"
+doc_link_with_quotes = "warn"
+
