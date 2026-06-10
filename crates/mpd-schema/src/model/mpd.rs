@@ -12,6 +12,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::error::Error;
+use crate::model::descriptor::{ContentProtection, Descriptor};
 use crate::model::element::Element;
 use crate::model::segment::{SegmentBase, SegmentList, SegmentTemplate};
 use crate::model::types::{
@@ -52,9 +53,17 @@ pub struct Mpd {
     pub max_segment_duration: Option<XsDuration>,
     /// The `maxSubsegmentDuration` attribute.
     pub max_subsegment_duration: Option<XsDuration>,
+    /// The `ContentProtection` children.
+    pub content_protections: Vec<ContentProtection>,
     /// The `Period` children. The schema requires at least one; occurrence
     /// counts are not enforced by parsing.
     pub periods: Vec<Period>,
+    /// The `EssentialProperty` children.
+    pub essential_properties: Vec<Descriptor>,
+    /// The `SupplementalProperty` children.
+    pub supplemental_properties: Vec<Descriptor>,
+    /// The `UTCTiming` children.
+    pub utc_timings: Vec<Descriptor>,
     /// Attributes without a typed field, as written, including `xmlns:*`
     /// declarations. The default `xmlns` declaration is not kept: parsing
     /// drops it and serialization re-adds [`MPD_NAMESPACE`] on the root.
@@ -82,7 +91,11 @@ impl Mpd {
             suggested_presentation_delay: None,
             max_segment_duration: None,
             max_subsegment_duration: None,
+            content_protections: Vec::new(),
             periods: Vec::new(),
+            essential_properties: Vec::new(),
+            supplemental_properties: Vec::new(),
+            utc_timings: Vec::new(),
             unknown_attributes: Vec::new(),
             unknown_children: Vec::new(),
         }
@@ -141,8 +154,14 @@ pub struct Period {
     pub segment_list: Option<SegmentList>,
     /// The `SegmentTemplate` child.
     pub segment_template: Option<SegmentTemplate>,
+    /// The `AssetIdentifier` child.
+    pub asset_identifier: Option<Descriptor>,
+    /// The `ContentProtection` children.
+    pub content_protections: Vec<ContentProtection>,
     /// The `AdaptationSet` children.
     pub adaptation_sets: Vec<AdaptationSet>,
+    /// The `SupplementalProperty` children.
+    pub supplemental_properties: Vec<Descriptor>,
     /// Attributes without a typed field, as written.
     pub unknown_attributes: Vec<(String, String)>,
     /// Child elements without a typed field, re-serialized after the known
@@ -153,7 +172,21 @@ pub struct Period {
 impl Period {
     /// Creates an empty period; the schema requires no attribute.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            id: None,
+            start: None,
+            duration: None,
+            bitstream_switching: None,
+            segment_base: None,
+            segment_list: None,
+            segment_template: None,
+            asset_identifier: None,
+            content_protections: Vec::new(),
+            adaptation_sets: Vec::new(),
+            supplemental_properties: Vec::new(),
+            unknown_attributes: Vec::new(),
+            unknown_children: Vec::new(),
+        }
     }
 }
 
@@ -203,6 +236,18 @@ pub struct RepresentationBase {
     pub selection_priority: Option<u32>,
     /// The `tag` attribute.
     pub tag: Option<String>,
+    /// The `FramePacking` children.
+    pub frame_packings: Vec<Descriptor>,
+    /// The `AudioChannelConfiguration` children.
+    pub audio_channel_configurations: Vec<Descriptor>,
+    /// The `ContentProtection` children.
+    pub content_protections: Vec<ContentProtection>,
+    /// The `OutputProtection` child.
+    pub output_protection: Option<Descriptor>,
+    /// The `EssentialProperty` children.
+    pub essential_properties: Vec<Descriptor>,
+    /// The `SupplementalProperty` children.
+    pub supplemental_properties: Vec<Descriptor>,
     /// Attributes without a typed field, as written.
     pub unknown_attributes: Vec<(String, String)>,
     /// Child elements without a typed field, re-serialized after the known
@@ -304,6 +349,14 @@ pub struct AdaptationSet {
     pub initialization_set_ref: Vec<u32>,
     /// The `initializationPrincipal` attribute.
     pub initialization_principal: Option<String>,
+    /// The `Accessibility` children.
+    pub accessibilities: Vec<Descriptor>,
+    /// The `Role` children.
+    pub roles: Vec<Descriptor>,
+    /// The `Rating` children.
+    pub ratings: Vec<Descriptor>,
+    /// The `Viewpoint` children.
+    pub viewpoints: Vec<Descriptor>,
     /// The `SegmentBase` child.
     pub segment_base: Option<SegmentBase>,
     /// The `SegmentList` child.

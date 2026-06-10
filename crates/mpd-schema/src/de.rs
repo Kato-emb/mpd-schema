@@ -10,6 +10,7 @@
 use crate::backend::Reader;
 use crate::error::{Error, ErrorKind, Result};
 use crate::event::{Attribute, Event, StartElement};
+use crate::model::descriptor::{ContentProtection, Descriptor};
 use crate::model::element::{Element, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, PresentationType, Representation, RepresentationBase,
@@ -179,7 +180,15 @@ impl Deserializer<'_> {
         mpd.unknown_attributes = unknown_attributes;
 
         while let Some(child) = self.next_content_event()? {
-            if child.matches(MPD_NAMESPACE, "Period") {
+            if child.matches(MPD_NAMESPACE, "ContentProtection") {
+                self.path.push(PathSegment {
+                    element_name: "ContentProtection",
+                    sibling_index: Some(mpd.content_protections.len()),
+                });
+                let cp = self.parse_content_protection(child)?;
+                self.path.pop();
+                mpd.content_protections.push(cp);
+            } else if child.matches(MPD_NAMESPACE, "Period") {
                 self.path.push(PathSegment {
                     element_name: "Period",
                     sibling_index: Some(mpd.periods.len()),
@@ -187,6 +196,30 @@ impl Deserializer<'_> {
                 let period = self.parse_period(child)?;
                 self.path.pop();
                 mpd.periods.push(period);
+            } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
+                self.path.push(PathSegment {
+                    element_name: "EssentialProperty",
+                    sibling_index: Some(mpd.essential_properties.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                mpd.essential_properties.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
+                self.path.push(PathSegment {
+                    element_name: "SupplementalProperty",
+                    sibling_index: Some(mpd.supplemental_properties.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                mpd.supplemental_properties.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "UTCTiming") {
+                self.path.push(PathSegment {
+                    element_name: "UTCTiming",
+                    sibling_index: Some(mpd.utc_timings.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                mpd.utc_timings.push(desc);
             } else {
                 mpd.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -228,7 +261,22 @@ impl Deserializer<'_> {
             else {
                 continue;
             };
-            if child.matches(MPD_NAMESPACE, "AdaptationSet") {
+            if child.matches(MPD_NAMESPACE, "AssetIdentifier") {
+                self.parse_singular_child(
+                    &mut period.asset_identifier,
+                    "AssetIdentifier",
+                    child,
+                    Self::parse_descriptor,
+                )?;
+            } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
+                self.path.push(PathSegment {
+                    element_name: "ContentProtection",
+                    sibling_index: Some(period.content_protections.len()),
+                });
+                let cp = self.parse_content_protection(child)?;
+                self.path.pop();
+                period.content_protections.push(cp);
+            } else if child.matches(MPD_NAMESPACE, "AdaptationSet") {
                 self.path.push(PathSegment {
                     element_name: "AdaptationSet",
                     sibling_index: Some(period.adaptation_sets.len()),
@@ -236,6 +284,14 @@ impl Deserializer<'_> {
                 let adaptation_set = self.parse_adaptation_set(child)?;
                 self.path.pop();
                 period.adaptation_sets.push(adaptation_set);
+            } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
+                self.path.push(PathSegment {
+                    element_name: "SupplementalProperty",
+                    sibling_index: Some(period.supplemental_properties.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                period.supplemental_properties.push(desc);
             } else {
                 period
                     .unknown_children
@@ -356,7 +412,39 @@ impl Deserializer<'_> {
             else {
                 continue;
             };
-            if child.matches(MPD_NAMESPACE, "Representation") {
+            if child.matches(MPD_NAMESPACE, "Accessibility") {
+                self.path.push(PathSegment {
+                    element_name: "Accessibility",
+                    sibling_index: Some(adaptation_set.accessibilities.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                adaptation_set.accessibilities.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "Role") {
+                self.path.push(PathSegment {
+                    element_name: "Role",
+                    sibling_index: Some(adaptation_set.roles.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                adaptation_set.roles.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "Rating") {
+                self.path.push(PathSegment {
+                    element_name: "Rating",
+                    sibling_index: Some(adaptation_set.ratings.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                adaptation_set.ratings.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
+                self.path.push(PathSegment {
+                    element_name: "Viewpoint",
+                    sibling_index: Some(adaptation_set.viewpoints.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                adaptation_set.viewpoints.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "Representation") {
                 self.path.push(PathSegment {
                     element_name: "Representation",
                     sibling_index: Some(adaptation_set.representations.len()),
@@ -441,10 +529,59 @@ impl Deserializer<'_> {
             else {
                 continue;
             };
-            representation
-                .base
-                .unknown_children
-                .push(self.parse_unknown_element(child, 0)?);
+            if child.matches(MPD_NAMESPACE, "FramePacking") {
+                self.path.push(PathSegment {
+                    element_name: "FramePacking",
+                    sibling_index: Some(representation.base.frame_packings.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                representation.base.frame_packings.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "AudioChannelConfiguration") {
+                self.path.push(PathSegment {
+                    element_name: "AudioChannelConfiguration",
+                    sibling_index: Some(representation.base.audio_channel_configurations.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                representation.base.audio_channel_configurations.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
+                self.path.push(PathSegment {
+                    element_name: "ContentProtection",
+                    sibling_index: Some(representation.base.content_protections.len()),
+                });
+                let cp = self.parse_content_protection(child)?;
+                self.path.pop();
+                representation.base.content_protections.push(cp);
+            } else if child.matches(MPD_NAMESPACE, "OutputProtection") {
+                self.parse_singular_child(
+                    &mut representation.base.output_protection,
+                    "OutputProtection",
+                    child,
+                    Self::parse_descriptor,
+                )?;
+            } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
+                self.path.push(PathSegment {
+                    element_name: "EssentialProperty",
+                    sibling_index: Some(representation.base.essential_properties.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                representation.base.essential_properties.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
+                self.path.push(PathSegment {
+                    element_name: "SupplementalProperty",
+                    sibling_index: Some(representation.base.supplemental_properties.len()),
+                });
+                let desc = self.parse_descriptor(child)?;
+                self.path.pop();
+                representation.base.supplemental_properties.push(desc);
+            } else {
+                representation
+                    .base
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
         }
         Ok(representation)
     }
@@ -902,6 +1039,71 @@ impl Deserializer<'_> {
                 .push(self.parse_unknown_element(child, 0)?);
         }
         Ok(fcs)
+    }
+
+    fn parse_descriptor(&mut self, start: StartElement) -> Result<Descriptor> {
+        let mut scheme_id_uri: Option<String> = None;
+        let mut value: Option<String> = None;
+        let mut id: Option<String> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "schemeIdUri" => scheme_id_uri = Some(attribute.value),
+                "value" => value = Some(attribute.value),
+                "id" => id = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+        let mut descriptor =
+            Descriptor::new(scheme_id_uri.ok_or_else(|| self.missing_attribute("schemeIdUri"))?);
+        descriptor.value = value;
+        descriptor.id = id;
+        descriptor.unknown_attributes = unknown_attributes;
+        while let Some(child) = self.next_content_event()? {
+            descriptor
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(descriptor)
+    }
+
+    fn parse_content_protection(&mut self, start: StartElement) -> Result<ContentProtection> {
+        let mut scheme_id_uri: Option<String> = None;
+        let mut value: Option<String> = None;
+        let mut id: Option<String> = None;
+        let mut robustness: Option<String> = None;
+        let mut ref_id: Option<String> = None;
+        let mut r#ref: Option<String> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "schemeIdUri" => scheme_id_uri = Some(attribute.value),
+                "value" => value = Some(attribute.value),
+                "id" => id = Some(attribute.value),
+                "robustness" => robustness = Some(attribute.value),
+                "refId" => ref_id = Some(attribute.value),
+                "ref" => r#ref = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+        let mut content_protection = ContentProtection::new(
+            scheme_id_uri.ok_or_else(|| self.missing_attribute("schemeIdUri"))?,
+        );
+        content_protection.base.value = value;
+        content_protection.base.id = id;
+        content_protection.robustness = robustness;
+        content_protection.ref_id = ref_id;
+        content_protection.r#ref = r#ref;
+        content_protection.base.unknown_attributes = unknown_attributes;
+        while let Some(child) = self.next_content_event()? {
+            content_protection
+                .base
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(content_protection)
     }
 
     fn parse_segment_timeline(&mut self, start: StartElement) -> Result<SegmentTimeline> {

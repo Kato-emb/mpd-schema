@@ -10,6 +10,7 @@ use std::io;
 use crate::backend::Writer;
 use crate::error::Result;
 use crate::event::{Attribute, Event, StartElement};
+use crate::model::descriptor::{ContentProtection, Descriptor};
 use crate::model::element::{Element, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, Representation, RepresentationBase,
@@ -85,8 +86,20 @@ fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
     push_unknown_attributes(&mut attributes, &mpd.unknown_attributes);
 
     start_element(writer, "MPD", attributes)?;
+    for cp in &mpd.content_protections {
+        emit_content_protection(writer, cp)?;
+    }
     for period in &mpd.periods {
         emit_period(writer, period)?;
+    }
+    for desc in &mpd.essential_properties {
+        emit_descriptor(writer, desc, "EssentialProperty")?;
+    }
+    for desc in &mpd.supplemental_properties {
+        emit_descriptor(writer, desc, "SupplementalProperty")?;
+    }
+    for desc in &mpd.utc_timings {
+        emit_descriptor(writer, desc, "UTCTiming")?;
     }
     emit_unknown_children(writer, &mpd.unknown_children)?;
     writer.write_event(&Event::End)
@@ -111,8 +124,17 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
         period.segment_list.as_ref(),
         period.segment_template.as_ref(),
     )?;
+    if let Some(desc) = &period.asset_identifier {
+        emit_descriptor(writer, desc, "AssetIdentifier")?;
+    }
+    for cp in &period.content_protections {
+        emit_content_protection(writer, cp)?;
+    }
     for adaptation_set in &period.adaptation_sets {
         emit_adaptation_set(writer, adaptation_set)?;
+    }
+    for desc in &period.supplemental_properties {
+        emit_descriptor(writer, desc, "SupplementalProperty")?;
     }
     emit_unknown_children(writer, &period.unknown_children)?;
     writer.write_event(&Event::End)
@@ -206,6 +228,19 @@ fn emit_adaptation_set<W: io::Write>(
     push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes);
 
     start_element(writer, "AdaptationSet", attributes)?;
+    emit_representation_base_children(writer, &adaptation_set.base)?;
+    for desc in &adaptation_set.accessibilities {
+        emit_descriptor(writer, desc, "Accessibility")?;
+    }
+    for desc in &adaptation_set.roles {
+        emit_descriptor(writer, desc, "Role")?;
+    }
+    for desc in &adaptation_set.ratings {
+        emit_descriptor(writer, desc, "Rating")?;
+    }
+    for desc in &adaptation_set.viewpoints {
+        emit_descriptor(writer, desc, "Viewpoint")?;
+    }
     emit_segment_children(
         writer,
         adaptation_set.segment_base.as_ref(),
@@ -255,6 +290,7 @@ fn emit_representation<W: io::Write>(
     push_unknown_attributes(&mut attributes, &representation.base.unknown_attributes);
 
     start_element(writer, "Representation", attributes)?;
+    emit_representation_base_children(writer, &representation.base)?;
     emit_segment_children(
         writer,
         representation.segment_base.as_ref(),
@@ -263,6 +299,31 @@ fn emit_representation<W: io::Write>(
     )?;
     emit_unknown_children(writer, &representation.base.unknown_children)?;
     writer.write_event(&Event::End)
+}
+
+fn emit_representation_base_children<W: io::Write>(
+    writer: &mut Writer<W>,
+    base: &RepresentationBase,
+) -> Result<()> {
+    for desc in &base.frame_packings {
+        emit_descriptor(writer, desc, "FramePacking")?;
+    }
+    for desc in &base.audio_channel_configurations {
+        emit_descriptor(writer, desc, "AudioChannelConfiguration")?;
+    }
+    for cp in &base.content_protections {
+        emit_content_protection(writer, cp)?;
+    }
+    if let Some(desc) = &base.output_protection {
+        emit_descriptor(writer, desc, "OutputProtection")?;
+    }
+    for desc in &base.essential_properties {
+        emit_descriptor(writer, desc, "EssentialProperty")?;
+    }
+    for desc in &base.supplemental_properties {
+        emit_descriptor(writer, desc, "SupplementalProperty")?;
+    }
+    Ok(())
 }
 
 fn emit_segment_children<W: io::Write>(
@@ -572,6 +633,50 @@ fn emit_unknown_element<W: io::Write>(writer: &mut Writer<W>, element: &Element)
             Node::Text(text) => writer.write_event(&Event::Text(text.clone()))?,
         }
     }
+    writer.write_event(&Event::End)
+}
+
+fn emit_descriptor<W: io::Write>(
+    writer: &mut Writer<W>,
+    descriptor: &Descriptor,
+    element_name: &str,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "schemeIdUri", &descriptor.scheme_id_uri);
+    push_optional(&mut attributes, "value", descriptor.value.as_ref());
+    push_optional(&mut attributes, "id", descriptor.id.as_ref());
+    push_unknown_attributes(&mut attributes, &descriptor.unknown_attributes);
+    start_element(writer, element_name, attributes)?;
+    emit_unknown_children(writer, &descriptor.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_content_protection<W: io::Write>(
+    writer: &mut Writer<W>,
+    content_protection: &ContentProtection,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(
+        &mut attributes,
+        "schemeIdUri",
+        &content_protection.base.scheme_id_uri,
+    );
+    push_optional(
+        &mut attributes,
+        "value",
+        content_protection.base.value.as_ref(),
+    );
+    push_optional(&mut attributes, "id", content_protection.base.id.as_ref());
+    push_optional(
+        &mut attributes,
+        "robustness",
+        content_protection.robustness.as_ref(),
+    );
+    push_optional(&mut attributes, "refId", content_protection.ref_id.as_ref());
+    push_optional(&mut attributes, "ref", content_protection.r#ref.as_ref());
+    push_unknown_attributes(&mut attributes, &content_protection.base.unknown_attributes);
+    start_element(writer, "ContentProtection", attributes)?;
+    emit_unknown_children(writer, &content_protection.base.unknown_children)?;
     writer.write_event(&Event::End)
 }
 
