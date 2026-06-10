@@ -522,42 +522,52 @@ impl Deserializer<'_> {
         child: StartElement,
     ) -> Result<Option<StartElement>> {
         if child.matches(MPD_NAMESPACE, "SegmentBase") {
-            if segment_base.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "SegmentBase",
-                sibling_index: None,
-            });
-            let parsed = self.parse_segment_base(child)?;
-            self.path.pop();
-            *segment_base = Some(parsed);
+            self.parse_singular_child(
+                segment_base,
+                "SegmentBase",
+                child,
+                Self::parse_segment_base,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "SegmentList") {
-            if segment_list.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "SegmentList",
-                sibling_index: None,
-            });
-            let parsed = self.parse_segment_list(child)?;
-            self.path.pop();
-            *segment_list = Some(parsed);
+            self.parse_singular_child(
+                segment_list,
+                "SegmentList",
+                child,
+                Self::parse_segment_list,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "SegmentTemplate") {
-            if segment_template.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "SegmentTemplate",
-                sibling_index: None,
-            });
-            let parsed = self.parse_segment_template(child)?;
-            self.path.pop();
-            *segment_template = Some(parsed);
+            self.parse_singular_child(
+                segment_template,
+                "SegmentTemplate",
+                child,
+                Self::parse_segment_template,
+            )?;
         } else {
             return Ok(Some(child));
         }
         Ok(None)
+    }
+
+    /// Parses a child the schema allows at most once into `slot`, rejecting
+    /// a second occurrence and framing the path segment around `parse`.
+    fn parse_singular_child<T>(
+        &mut self,
+        slot: &mut Option<T>,
+        element_name: &'static str,
+        child: StartElement,
+        parse: impl FnOnce(&mut Self, StartElement) -> Result<T>,
+    ) -> Result<()> {
+        if slot.is_some() {
+            return Err(self.duplicate_element(child.name));
+        }
+        self.path.push(PathSegment {
+            element_name,
+            sibling_index: None,
+        });
+        let parsed = parse(self, child)?;
+        self.path.pop();
+        *slot = Some(parsed);
+        Ok(())
     }
 
     fn parse_segment_base(&mut self, start: StartElement) -> Result<SegmentBase> {
@@ -730,38 +740,26 @@ impl Deserializer<'_> {
         child: StartElement,
     ) -> Result<Option<StartElement>> {
         if child.matches(MPD_NAMESPACE, "Initialization") {
-            if segment_base.initialization.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "Initialization",
-                sibling_index: None,
-            });
-            let url = self.parse_url(child)?;
-            self.path.pop();
-            segment_base.initialization = Some(url);
+            self.parse_singular_child(
+                &mut segment_base.initialization,
+                "Initialization",
+                child,
+                Self::parse_url,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "RepresentationIndex") {
-            if segment_base.representation_index.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "RepresentationIndex",
-                sibling_index: None,
-            });
-            let url = self.parse_url(child)?;
-            self.path.pop();
-            segment_base.representation_index = Some(url);
+            self.parse_singular_child(
+                &mut segment_base.representation_index,
+                "RepresentationIndex",
+                child,
+                Self::parse_url,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "FailoverContent") {
-            if segment_base.failover_content.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "FailoverContent",
-                sibling_index: None,
-            });
-            let failover_content = self.parse_failover_content(child)?;
-            self.path.pop();
-            segment_base.failover_content = Some(failover_content);
+            self.parse_singular_child(
+                &mut segment_base.failover_content,
+                "FailoverContent",
+                child,
+                Self::parse_failover_content,
+            )?;
         } else {
             return Ok(Some(child));
         }
@@ -810,27 +808,19 @@ impl Deserializer<'_> {
             return Ok(None);
         };
         if child.matches(MPD_NAMESPACE, "SegmentTimeline") {
-            if base.segment_timeline.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "SegmentTimeline",
-                sibling_index: None,
-            });
-            let segment_timeline = self.parse_segment_timeline(child)?;
-            self.path.pop();
-            base.segment_timeline = Some(segment_timeline);
+            self.parse_singular_child(
+                &mut base.segment_timeline,
+                "SegmentTimeline",
+                child,
+                Self::parse_segment_timeline,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "BitstreamSwitching") {
-            if base.bitstream_switching.is_some() {
-                return Err(self.duplicate_element(child.name));
-            }
-            self.path.push(PathSegment {
-                element_name: "BitstreamSwitching",
-                sibling_index: None,
-            });
-            let url = self.parse_url(child)?;
-            self.path.pop();
-            base.bitstream_switching = Some(url);
+            self.parse_singular_child(
+                &mut base.bitstream_switching,
+                "BitstreamSwitching",
+                child,
+                Self::parse_url,
+            )?;
         } else {
             return Ok(Some(child));
         }
