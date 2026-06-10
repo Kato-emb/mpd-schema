@@ -62,8 +62,10 @@ impl StartElement {
 /// An attribute of a [`StartElement`].
 ///
 /// Names are lexical (qualified name as written); values have entity and
-/// character references resolved and whitespace normalized per the XML
-/// attribute-value rules.
+/// character references resolved and whitespace normalized per the XML 1.0
+/// attribute-value normalization rules. The XML 1.0 profile (not 1.1) is
+/// part of this seam's contract: any producer of events — the serializer or
+/// an alternative backend — must supply values already in this form.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Attribute {
     /// The qualified name as written in the document.
