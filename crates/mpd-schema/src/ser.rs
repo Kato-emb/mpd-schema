@@ -1,0 +1,537 @@
+//! Struct-to-event serialization.
+//!
+//! Known elements are written unprefixed in the canonical XSD order with the
+//! default namespace declared on the root, while unknown content is written
+//! back lexically after the known children (ADR-0003, ARCHITECTURE.md).
+
+use std::fmt;
+use std::io;
+
+use crate::backend::Writer;
+use crate::error::Result;
+use crate::event::{Attribute, Event, StartElement};
+use crate::model::element::{Element, Node};
+use crate::model::mpd::{
+    AdaptationSet, MPD_NAMESPACE, Mpd, Period, Representation, RepresentationBase,
+};
+
+pub(crate) fn write_mpd<W: io::Write>(mpd: &Mpd, sink: W) -> Result<W> {
+    let mut writer = Writer::new(sink);
+    emit_mpd(&mut writer, mpd)?;
+    Ok(writer.into_inner())
+}
+
+fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
+    let mut attributes = Vec::new();
+    // パース時に既定名前空間宣言を保持しない方針（de.rs 参照）の対であり、
+    // ルートで宣言し直す。手組みの構造体が受け皿に `xmlns` を持つ場合だけ
+    // 重複宣言を避けるため譲る。
+    if !mpd
+        .unknown_attributes
+        .iter()
+        .any(|(name, _)| name == "xmlns")
+    {
+        push_attribute(&mut attributes, "xmlns", MPD_NAMESPACE);
+    }
+    push_optional(&mut attributes, "id", mpd.id.as_ref());
+    push_attribute(&mut attributes, "profiles", &mpd.profiles);
+    push_optional(&mut attributes, "type", mpd.presentation_type.as_ref());
+    push_optional(
+        &mut attributes,
+        "availabilityStartTime",
+        mpd.availability_start_time.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "availabilityEndTime",
+        mpd.availability_end_time.as_ref(),
+    );
+    push_optional(&mut attributes, "publishTime", mpd.publish_time.as_ref());
+    push_optional(
+        &mut attributes,
+        "mediaPresentationDuration",
+        mpd.media_presentation_duration.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "minimumUpdatePeriod",
+        mpd.minimum_update_period.as_ref(),
+    );
+    push_attribute(&mut attributes, "minBufferTime", mpd.min_buffer_time);
+    push_optional(
+        &mut attributes,
+        "timeShiftBufferDepth",
+        mpd.time_shift_buffer_depth.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "suggestedPresentationDelay",
+        mpd.suggested_presentation_delay.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxSegmentDuration",
+        mpd.max_segment_duration.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxSubsegmentDuration",
+        mpd.max_subsegment_duration.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &mpd.unknown_attributes);
+
+    start_element(writer, "MPD", attributes)?;
+    for period in &mpd.periods {
+        emit_period(writer, period)?;
+    }
+    emit_unknown_children(writer, &mpd.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "id", period.id.as_ref());
+    push_optional(&mut attributes, "start", period.start.as_ref());
+    push_optional(&mut attributes, "duration", period.duration.as_ref());
+    push_optional(
+        &mut attributes,
+        "bitstreamSwitching",
+        period.bitstream_switching.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &period.unknown_attributes);
+
+    start_element(writer, "Period", attributes)?;
+    for adaptation_set in &period.adaptation_sets {
+        emit_adaptation_set(writer, adaptation_set)?;
+    }
+    emit_unknown_children(writer, &period.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_adaptation_set<W: io::Write>(
+    writer: &mut Writer<W>,
+    adaptation_set: &AdaptationSet,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_representation_base_attributes(&mut attributes, &adaptation_set.base);
+    push_optional(&mut attributes, "id", adaptation_set.id.as_ref());
+    push_optional(&mut attributes, "group", adaptation_set.group.as_ref());
+    push_optional(&mut attributes, "lang", adaptation_set.lang.as_ref());
+    push_optional(
+        &mut attributes,
+        "contentType",
+        adaptation_set.content_type.as_ref(),
+    );
+    push_optional(&mut attributes, "par", adaptation_set.par.as_ref());
+    push_optional(
+        &mut attributes,
+        "minBandwidth",
+        adaptation_set.min_bandwidth.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxBandwidth",
+        adaptation_set.max_bandwidth.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "minWidth",
+        adaptation_set.min_width.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxWidth",
+        adaptation_set.max_width.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "minHeight",
+        adaptation_set.min_height.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxHeight",
+        adaptation_set.max_height.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "minFrameRate",
+        adaptation_set.min_frame_rate.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "maxFrameRate",
+        adaptation_set.max_frame_rate.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "segmentAlignment",
+        adaptation_set.segment_alignment.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "subsegmentAlignment",
+        adaptation_set.subsegment_alignment.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "subsegmentStartsWithSAP",
+        adaptation_set.subsegment_starts_with_sap.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "bitstreamSwitching",
+        adaptation_set.bitstream_switching.as_ref(),
+    );
+    push_list(
+        &mut attributes,
+        "initializationSetRef",
+        &adaptation_set.initialization_set_ref,
+    );
+    push_optional(
+        &mut attributes,
+        "initializationPrincipal",
+        adaptation_set.initialization_principal.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes);
+
+    start_element(writer, "AdaptationSet", attributes)?;
+    for representation in &adaptation_set.representations {
+        emit_representation(writer, representation)?;
+    }
+    emit_unknown_children(writer, &adaptation_set.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_representation<W: io::Write>(
+    writer: &mut Writer<W>,
+    representation: &Representation,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_representation_base_attributes(&mut attributes, &representation.base);
+    push_attribute(&mut attributes, "id", &representation.id);
+    push_attribute(&mut attributes, "bandwidth", representation.bandwidth);
+    push_optional(
+        &mut attributes,
+        "qualityRanking",
+        representation.quality_ranking.as_ref(),
+    );
+    push_list(
+        &mut attributes,
+        "dependencyId",
+        &representation.dependency_id,
+    );
+    push_list(
+        &mut attributes,
+        "associationId",
+        &representation.association_id,
+    );
+    push_list(
+        &mut attributes,
+        "associationType",
+        &representation.association_type,
+    );
+    push_list(
+        &mut attributes,
+        "mediaStreamStructureId",
+        &representation.media_stream_structure_id,
+    );
+    push_unknown_attributes(&mut attributes, &representation.base.unknown_attributes);
+
+    start_element(writer, "Representation", attributes)?;
+    emit_unknown_children(writer, &representation.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn push_representation_base_attributes(attributes: &mut Vec<Attribute>, base: &RepresentationBase) {
+    push_optional(attributes, "profiles", base.profiles.as_ref());
+    push_optional(attributes, "width", base.width.as_ref());
+    push_optional(attributes, "height", base.height.as_ref());
+    push_optional(attributes, "sar", base.sar.as_ref());
+    push_optional(attributes, "frameRate", base.frame_rate.as_ref());
+    push_list(attributes, "audioSamplingRate", &base.audio_sampling_rate);
+    push_optional(attributes, "mimeType", base.mime_type.as_ref());
+    push_list(attributes, "segmentProfiles", &base.segment_profiles);
+    push_optional(attributes, "codecs", base.codecs.as_ref());
+    push_list(attributes, "containerProfiles", &base.container_profiles);
+    if let Some(maximum_sap_period) = base.maximum_sap_period {
+        push_attribute(
+            attributes,
+            "maximumSAPPeriod",
+            xs_double_lexical(maximum_sap_period),
+        );
+    }
+    push_optional(attributes, "startWithSAP", base.start_with_sap.as_ref());
+    if let Some(max_playout_rate) = base.max_playout_rate {
+        push_attribute(
+            attributes,
+            "maxPlayoutRate",
+            xs_double_lexical(max_playout_rate),
+        );
+    }
+    push_optional(
+        attributes,
+        "codingDependency",
+        base.coding_dependency.as_ref(),
+    );
+    push_optional(attributes, "scanType", base.scan_type.as_ref());
+    push_optional(
+        attributes,
+        "selectionPriority",
+        base.selection_priority.as_ref(),
+    );
+    push_optional(attributes, "tag", base.tag.as_ref());
+}
+
+fn emit_unknown_children<W: io::Write>(writer: &mut Writer<W>, children: &[Element]) -> Result<()> {
+    for element in children {
+        emit_unknown_element(writer, element)?;
+    }
+    Ok(())
+}
+
+fn emit_unknown_element<W: io::Write>(writer: &mut Writer<W>, element: &Element) -> Result<()> {
+    let attributes = element
+        .attributes
+        .iter()
+        .map(|(name, value)| Attribute {
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect();
+    writer.write_event(&Event::Start(StartElement {
+        name: element.name.clone(),
+        namespace: element.namespace.clone(),
+        attributes,
+    }))?;
+    for child in &element.children {
+        match child {
+            Node::Element(child_element) => emit_unknown_element(writer, child_element)?,
+            Node::Text(text) => writer.write_event(&Event::Text(text.clone()))?,
+        }
+    }
+    writer.write_event(&Event::End)
+}
+
+fn start_element<W: io::Write>(
+    writer: &mut Writer<W>,
+    name: &str,
+    attributes: Vec<Attribute>,
+) -> Result<()> {
+    writer.write_event(&Event::Start(StartElement {
+        name: name.to_string(),
+        namespace: None,
+        attributes,
+    }))
+}
+
+fn push_attribute(attributes: &mut Vec<Attribute>, name: &str, value: impl fmt::Display) {
+    attributes.push(Attribute {
+        name: name.to_string(),
+        value: value.to_string(),
+    });
+}
+
+fn push_optional<T: fmt::Display>(attributes: &mut Vec<Attribute>, name: &str, value: Option<&T>) {
+    if let Some(value) = value {
+        push_attribute(attributes, name, value);
+    }
+}
+
+fn push_list<T: fmt::Display>(attributes: &mut Vec<Attribute>, name: &str, values: &[T]) {
+    if values.is_empty() {
+        return;
+    }
+    let lexical = values
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    push_attribute(attributes, name, lexical);
+}
+
+fn push_unknown_attributes(attributes: &mut Vec<Attribute>, unknown: &[(String, String)]) {
+    for (name, value) in unknown {
+        attributes.push(Attribute {
+            name: name.clone(),
+            value: value.clone(),
+        });
+    }
+}
+
+fn xs_double_lexical(value: f64) -> String {
+    if value.is_nan() {
+        "NaN".to_string()
+    } else if value.is_infinite() {
+        if value.is_sign_positive() {
+            "INF"
+        } else {
+            "-INF"
+        }
+        .to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::de::mpd_from_slice;
+    use crate::model::types::XsDuration;
+
+    fn serialize(mpd: &Mpd) -> String {
+        let output = write_mpd(mpd, Vec::new()).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    /// parse → serialize → parse の意味論的等価（CONTEXT.md）をモデル比較で
+    /// 確認する。
+    fn assert_roundtrip(input: &str) -> Mpd {
+        let first = mpd_from_slice(input.as_bytes()).unwrap();
+        let output = serialize(&first);
+        let second = mpd_from_slice(output.as_bytes()).unwrap();
+        assert_eq!(first, second, "roundtrip output:\n{output}");
+        first
+    }
+
+    #[test]
+    fn hand_built_mpd_serializes_with_default_namespace() {
+        let mut mpd = Mpd::new(
+            "urn:mpeg:dash:profile:isoff-on-demand:2011",
+            "PT2S".parse::<XsDuration>().unwrap(),
+        );
+        mpd.periods.push(Period::new());
+        let output = serialize(&mpd);
+        assert_eq!(
+            output,
+            concat!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+                r#"profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" minBufferTime="PT2S">"#,
+                "<Period></Period>",
+                "</MPD>",
+            )
+        );
+    }
+
+    #[test]
+    fn minimal_mpd_roundtrips() {
+        assert_roundtrip(concat!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+            "\n",
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+            r#"profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" minBufferTime="PT2S">"#,
+            "\n  <Period/>\n",
+            "</MPD>",
+        ));
+    }
+
+    #[test]
+    fn typed_attributes_roundtrip_along_the_spine() {
+        assert_roundtrip(concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" id="m1" profiles="p" "#,
+            r#"type="dynamic" availabilityStartTime="2026-06-10T00:00:00Z" "#,
+            r#"publishTime="2026-06-10T01:02:03.5Z" minimumUpdatePeriod="PT30S" "#,
+            r#"minBufferTime="PT1.5S" timeShiftBufferDepth="PT1H" "#,
+            r#"suggestedPresentationDelay="PT10S" maxSegmentDuration="PT4S">"#,
+            r#"<Period id="p0" start="PT0S" duration="PT30M" bitstreamSwitching="false">"#,
+            r#"<AdaptationSet id="1" group="2" lang="en" contentType="video" par="16:9" "#,
+            r#"minBandwidth="1000000" maxBandwidth="5000000" minWidth="640" maxWidth="1920" "#,
+            r#"minHeight="360" maxHeight="1080" minFrameRate="25" maxFrameRate="30000/1001" "#,
+            r#"segmentAlignment="true" subsegmentAlignment="false" subsegmentStartsWithSAP="1" "#,
+            r#"bitstreamSwitching="true" initializationSetRef="1 2" "#,
+            r#"initializationPrincipal="https://example.com/init.mpd" mimeType="video/mp4" "#,
+            r#"codecs="avc1.640028" maximumSAPPeriod="2.5" startWithSAP="1" "#,
+            r#"maxPlayoutRate="2" codingDependency="false" scanType="progressive" "#,
+            r#"selectionPriority="3" tag="main">"#,
+            r#"<Representation id="v0" bandwidth="4800000" qualityRanking="1" "#,
+            r#"dependencyId="a b" associationId="c" associationType="cdsc" "#,
+            r#"mediaStreamStructureId="s1" width="1920" height="1080" sar="1:1" "#,
+            r#"frameRate="30000/1001" audioSamplingRate="44100 48000" "#,
+            r#"segmentProfiles="cmfc cmff" containerProfiles="cmfc"/>"#,
+            "</AdaptationSet>",
+            "</Period>",
+            "</MPD>",
+        ));
+    }
+
+    #[test]
+    fn unknown_content_roundtrips_after_known_children() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+            r#"xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" "#,
+            r#"xsi:schemaLocation="urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd" "#,
+            r#"profiles="p" minBufferTime="PT2S">"#,
+            "<ProgramInformation><Title>demo</Title></ProgramInformation>",
+            "<Period>",
+            r#"<AdaptationSet mimeType="video/mp4">"#,
+            r#"<ContentProtection xmlns:cenc="urn:mpeg:cenc:2013" "#,
+            r#"schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc">"#,
+            "<cenc:pssh>AAAA</cenc:pssh>",
+            "</ContentProtection>",
+            r#"<Representation id="v0" bandwidth="1000"/>"#,
+            "</AdaptationSet>",
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+
+        let period_position = output.find("<Period").unwrap();
+        let program_information_position = output.find("<ProgramInformation").unwrap();
+        assert!(
+            period_position < program_information_position,
+            "unknown children must follow known children: {output}"
+        );
+        let representation_position = output.find("<Representation").unwrap();
+        let content_protection_position = output.find("<ContentProtection").unwrap();
+        assert!(
+            representation_position < content_protection_position,
+            "unknown children must follow known children: {output}"
+        );
+        assert!(output.contains("<cenc:pssh>AAAA</cenc:pssh>"));
+        assert!(
+            output.contains(r#"xsi:schemaLocation="urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd""#)
+        );
+    }
+
+    #[test]
+    fn prefixed_input_roundtrips_to_unprefixed_known_elements() {
+        let input = concat!(
+            r#"<ns1:MPD xmlns:ns1="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S">"#,
+            "<ns1:Period/>",
+            "</ns1:MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+        assert!(output.starts_with(r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011""#));
+        assert!(output.contains("<Period></Period>"));
+        assert!(output.contains(r#"xmlns:ns1="urn:mpeg:dash:schema:mpd:2011""#));
+    }
+
+    #[test]
+    fn canonical_lexical_forms_replace_input_variants() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT120S" availabilityStartTime="2026-06-10T00:00:00+00:00">"#,
+            r#"<Period bitstreamSwitching="1"/>"#,
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+        assert!(output.contains(r#"minBufferTime="PT2M""#));
+        assert!(output.contains(r#"availabilityStartTime="2026-06-10T00:00:00Z""#));
+        assert!(output.contains(r#"bitstreamSwitching="true""#));
+    }
+
+    #[test]
+    fn unzoned_date_time_roundtrips() {
+        assert_roundtrip(concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S" availabilityStartTime="2011-05-10T06:16:42">"#,
+            "<Period/>",
+            "</MPD>",
+        ));
+    }
+}

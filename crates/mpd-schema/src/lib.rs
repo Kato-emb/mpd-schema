@@ -12,13 +12,23 @@
 
 #[allow(
     dead_code,
-    reason = "ADR-0007 の内部継ぎ目。利用側の de/ser は Phase 4 で実装されるため、それまで lib ビルドでは未使用になる"
+    reason = "ADR-0007 の内部継ぎ目。Phase 5 の公開 API が de/ser を呼ぶまで、lib ビルドでは未使用になる"
 )]
 mod backend;
+#[allow(
+    dead_code,
+    reason = "Phase 5 の公開 API（Mpd::from_slice 等）から呼ばれるまで、lib ビルドでは未使用になる"
+)]
+mod de;
 pub mod error;
 #[allow(
     dead_code,
-    reason = "ADR-0007 の内部継ぎ目。利用側の de/ser は Phase 4 で実装されるため、それまで lib ビルドでは未使用になる"
+    reason = "ADR-0007 の内部継ぎ目。Phase 5 の公開 API が de/ser を呼ぶまで、lib ビルドでは未使用になる"
 )]
 mod event;
 pub mod model;
+#[allow(
+    dead_code,
+    reason = "Phase 5 の公開 API（Mpd::write_to 等）から呼ばれるまで、lib ビルドでは未使用になる"
+)]
+mod ser;

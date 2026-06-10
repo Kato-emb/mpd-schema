@@ -1,22 +1,21 @@
 //! Attribute value types for the simple types defined by `DASH-MPD.xsd`.
-//!
-//! `xs:dateTime` attributes are represented with [`chrono`] types and need no
-//! custom type here.
 
 use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 
+use chrono::{DateTime, FixedOffset, NaiveDateTime, SecondsFormat};
+
 use crate::error::{Error, ErrorKind};
 
-fn invalid_value(value: &str, expected: &str) -> Error {
+pub(crate) fn invalid_value(value: &str, expected: &str) -> Error {
     Error::new(ErrorKind::InvalidValue {
         value: value.to_string(),
         expected: expected.to_string(),
     })
 }
 
-fn parse_unsigned_digits(text: &str) -> Option<u32> {
+pub(crate) fn parse_unsigned_digits(text: &str) -> Option<u32> {
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -248,6 +247,61 @@ impl fmt::Display for XsDuration {
             }
         }
         Ok(())
+    }
+}
+
+/// An `xs:dateTime` value.
+///
+/// The XSD value space distinguishes values with and without a timezone
+/// offset, and both occur in real MPDs. The two kinds are kept apart because
+/// an offset cannot be invented for an offset-less value without changing
+/// its meaning.
+///
+/// Equality follows the wrapped [`chrono`] types: two [`XsDateTime::Zoned`]
+/// values are equal when they denote the same instant (`2017-05-01T09:00:00Z`
+/// equals `2017-05-01T11:00:00+02:00`), and a zoned value never equals an
+/// unzoned one. [`fmt::Display`] produces the canonical lexical form, with a
+/// zero offset written as `Z`.
+///
+/// ```
+/// use mpd_schema::model::types::XsDateTime;
+///
+/// let published: XsDateTime = "2026-06-10T12:00:00+00:00".parse()?;
+/// assert_eq!(published.to_string(), "2026-06-10T12:00:00Z");
+/// # Ok::<(), mpd_schema::error::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum XsDateTime {
+    /// A value with a timezone offset, such as `2026-06-10T12:00:00Z`.
+    Zoned(DateTime<FixedOffset>),
+    /// A value without a timezone offset, such as `2026-06-10T12:00:00`.
+    Unzoned(NaiveDateTime),
+}
+
+impl FromStr for XsDateTime {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "an `xs:dateTime` such as `2026-06-10T12:00:00Z`";
+        if let Ok(zoned) = DateTime::parse_from_rfc3339(input) {
+            Ok(Self::Zoned(zoned))
+        } else if let Ok(unzoned) = input.parse::<NaiveDateTime>() {
+            Ok(Self::Unzoned(unzoned))
+        } else {
+            Err(invalid_value(input, EXPECTED))
+        }
+    }
+}
+
+impl fmt::Display for XsDateTime {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Zoned(value) => {
+                formatter.write_str(&value.to_rfc3339_opts(SecondsFormat::AutoSi, true))
+            }
+            Self::Unzoned(value) => write!(formatter, "{}", value.format("%Y-%m-%dT%H:%M:%S%.f")),
+        }
     }
 }
 
@@ -510,6 +564,65 @@ mod tests {
         for input in inputs {
             assert!(
                 input.parse::<XsDuration>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
+    fn date_time(input: &str) -> XsDateTime {
+        input.parse().unwrap()
+    }
+
+    #[test]
+    fn date_time_zero_offset_displays_as_z() {
+        assert_eq!(
+            date_time("2026-06-10T12:00:00+00:00").to_string(),
+            "2026-06-10T12:00:00Z"
+        );
+        assert_eq!(
+            date_time("2026-06-10T12:00:00Z").to_string(),
+            "2026-06-10T12:00:00Z"
+        );
+    }
+
+    #[test]
+    fn date_time_keeps_nonzero_offset() {
+        assert_eq!(
+            date_time("2026-06-10T12:00:00+09:00").to_string(),
+            "2026-06-10T12:00:00+09:00"
+        );
+    }
+
+    #[test]
+    fn date_time_zoned_equality_compares_instants() {
+        assert_eq!(
+            date_time("2017-05-01T09:00:00Z"),
+            date_time("2017-05-01T11:00:00+02:00")
+        );
+    }
+
+    #[test]
+    fn date_time_keeps_fractional_seconds() {
+        assert_eq!(
+            date_time("2020-02-19T10:42:02.684Z").to_string(),
+            "2020-02-19T10:42:02.684Z"
+        );
+    }
+
+    #[test]
+    fn date_time_without_offset_roundtrips() {
+        let parsed = date_time("2011-05-10T06:16:42");
+        assert!(matches!(parsed, XsDateTime::Unzoned(_)));
+        assert_eq!(parsed.to_string(), "2011-05-10T06:16:42");
+        assert_ne!(parsed, date_time("2011-05-10T06:16:42Z"));
+    }
+
+    #[test]
+    fn date_time_rejects_malformed_input() {
+        let inputs = ["", "2026-06-10", "12:00:00", "abc", "2026-13-01T00:00:00Z"];
+        for input in inputs {
+            assert!(
+                input.parse::<XsDateTime>().is_err(),
                 "expected `{input}` to be rejected"
             );
         }
