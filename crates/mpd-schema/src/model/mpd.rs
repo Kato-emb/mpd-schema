@@ -13,6 +13,7 @@ use std::str::FromStr;
 
 use crate::error::Error;
 use crate::model::element::Element;
+use crate::model::segment::{SegmentBase, SegmentList, SegmentTemplate};
 use crate::model::types::{
     AudioSamplingRate, FrameRate, Ratio, Sap, XsDateTime, XsDuration, invalid_value,
 };
@@ -134,6 +135,12 @@ pub struct Period {
     pub duration: Option<XsDuration>,
     /// The `bitstreamSwitching` attribute.
     pub bitstream_switching: Option<bool>,
+    /// The `SegmentBase` child.
+    pub segment_base: Option<SegmentBase>,
+    /// The `SegmentList` child.
+    pub segment_list: Option<SegmentList>,
+    /// The `SegmentTemplate` child.
+    pub segment_template: Option<SegmentTemplate>,
     /// The `AdaptationSet` children.
     pub adaptation_sets: Vec<AdaptationSet>,
     /// Attributes without a typed field, as written.
@@ -297,6 +304,12 @@ pub struct AdaptationSet {
     pub initialization_set_ref: Vec<u32>,
     /// The `initializationPrincipal` attribute.
     pub initialization_principal: Option<String>,
+    /// The `SegmentBase` child.
+    pub segment_base: Option<SegmentBase>,
+    /// The `SegmentList` child.
+    pub segment_list: Option<SegmentList>,
+    /// The `SegmentTemplate` child.
+    pub segment_template: Option<SegmentTemplate>,
     /// The `Representation` children.
     pub representations: Vec<Representation>,
 }
@@ -391,6 +404,12 @@ pub struct Representation {
     /// The `mediaStreamStructureId` attribute, split on whitespace. Empty
     /// means absent.
     pub media_stream_structure_id: Vec<String>,
+    /// The `SegmentBase` child.
+    pub segment_base: Option<SegmentBase>,
+    /// The `SegmentList` child.
+    pub segment_list: Option<SegmentList>,
+    /// The `SegmentTemplate` child.
+    pub segment_template: Option<SegmentTemplate>,
 }
 
 impl Representation {
@@ -406,6 +425,9 @@ impl Representation {
             association_id: Vec::new(),
             association_type: Vec::new(),
             media_stream_structure_id: Vec::new(),
+            segment_base: None,
+            segment_list: None,
+            segment_template: None,
         }
     }
 }
