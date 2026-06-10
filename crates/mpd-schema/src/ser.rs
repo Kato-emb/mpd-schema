@@ -640,6 +640,7 @@ fn emit_initialization_set<W: io::Write>(
     );
     push_unknown_attributes(&mut attributes, &init_set.base.unknown_attributes);
     start_element(writer, "InitializationSet", attributes)?;
+    emit_representation_base_children(writer, &init_set.base)?;
     for accessibility in &init_set.accessibilities {
         emit_descriptor(writer, accessibility, "Accessibility")?;
     }
@@ -1206,11 +1207,14 @@ mod tests {
             period_position < future_extension_position,
             "unknown children must follow known children: {output}"
         );
-        let representation_position = output.find("<Representation").unwrap();
+        // ContentProtection is now a typed element, so it should appear before unknown children.
+        let adaptation_set_position = output.find("<AdaptationSet").unwrap();
         let content_protection_position = output.find("<ContentProtection").unwrap();
+        let future_extension_in_adaptation_position = output.rfind("<FutureExtension").unwrap();
         assert!(
-            representation_position < content_protection_position,
-            "unknown children must follow known children: {output}"
+            adaptation_set_position < content_protection_position
+                && content_protection_position < future_extension_in_adaptation_position,
+            "ContentProtection (known) must follow AdaptationSet and precede unknown children: {output}"
         );
         assert!(output.contains("<cenc:pssh>AAAA</cenc:pssh>"));
         assert!(

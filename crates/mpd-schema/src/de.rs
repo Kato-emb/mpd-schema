@@ -449,6 +449,12 @@ impl Deserializer<'_> {
                 continue;
             }
 
+            let Some(child) =
+                self.apply_representation_base_child(&mut adaptation_set.base, child)?
+            else {
+                continue;
+            };
+
             let Some(child) = self.apply_segment_child(
                 &mut adaptation_set.segment_base,
                 &mut adaptation_set.segment_list,
@@ -572,6 +578,12 @@ impl Deserializer<'_> {
                 continue;
             }
 
+            let Some(child) =
+                self.apply_representation_base_child(&mut representation.base, child)?
+            else {
+                continue;
+            };
+
             let Some(child) = self.apply_segment_child(
                 &mut representation.segment_base,
                 &mut representation.segment_list,
@@ -581,59 +593,10 @@ impl Deserializer<'_> {
             else {
                 continue;
             };
-            if child.matches(MPD_NAMESPACE, "FramePacking") {
-                self.path.push(PathSegment {
-                    element_name: "FramePacking",
-                    sibling_index: Some(representation.base.frame_packings.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                representation.base.frame_packings.push(desc);
-            } else if child.matches(MPD_NAMESPACE, "AudioChannelConfiguration") {
-                self.path.push(PathSegment {
-                    element_name: "AudioChannelConfiguration",
-                    sibling_index: Some(representation.base.audio_channel_configurations.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                representation.base.audio_channel_configurations.push(desc);
-            } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
-                self.path.push(PathSegment {
-                    element_name: "ContentProtection",
-                    sibling_index: Some(representation.base.content_protections.len()),
-                });
-                let cp = self.parse_content_protection(child)?;
-                self.path.pop();
-                representation.base.content_protections.push(cp);
-            } else if child.matches(MPD_NAMESPACE, "OutputProtection") {
-                self.parse_singular_child(
-                    &mut representation.base.output_protection,
-                    "OutputProtection",
-                    child,
-                    Self::parse_descriptor,
-                )?;
-            } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
-                self.path.push(PathSegment {
-                    element_name: "EssentialProperty",
-                    sibling_index: Some(representation.base.essential_properties.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                representation.base.essential_properties.push(desc);
-            } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
-                self.path.push(PathSegment {
-                    element_name: "SupplementalProperty",
-                    sibling_index: Some(representation.base.supplemental_properties.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                representation.base.supplemental_properties.push(desc);
-            } else {
-                representation
-                    .base
-                    .unknown_children
-                    .push(self.parse_unknown_element(child, 0)?);
-            }
+            representation
+                .base
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
         }
         Ok(representation)
     }
@@ -1136,17 +1099,41 @@ impl Deserializer<'_> {
         init_set.id = id.ok_or_else(|| self.missing_attribute("id"))?;
 
         while let Some(child) = self.next_content_event()? {
+            let Some(child) = self.apply_representation_base_child(&mut init_set.base, child)?
+            else {
+                continue;
+            };
             if child.matches(MPD_NAMESPACE, "Accessibility") {
+                self.path.push(PathSegment {
+                    element_name: "Accessibility",
+                    sibling_index: Some(init_set.accessibilities.len()),
+                });
                 let descriptor = self.parse_descriptor(child)?;
+                self.path.pop();
                 init_set.accessibilities.push(descriptor);
             } else if child.matches(MPD_NAMESPACE, "Role") {
+                self.path.push(PathSegment {
+                    element_name: "Role",
+                    sibling_index: Some(init_set.roles.len()),
+                });
                 let descriptor = self.parse_descriptor(child)?;
+                self.path.pop();
                 init_set.roles.push(descriptor);
             } else if child.matches(MPD_NAMESPACE, "Rating") {
+                self.path.push(PathSegment {
+                    element_name: "Rating",
+                    sibling_index: Some(init_set.ratings.len()),
+                });
                 let descriptor = self.parse_descriptor(child)?;
+                self.path.pop();
                 init_set.ratings.push(descriptor);
             } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
+                self.path.push(PathSegment {
+                    element_name: "Viewpoint",
+                    sibling_index: Some(init_set.viewpoints.len()),
+                });
                 let descriptor = self.parse_descriptor(child)?;
+                self.path.pop();
                 init_set.viewpoints.push(descriptor);
             } else {
                 init_set
@@ -1216,6 +1203,69 @@ impl Deserializer<'_> {
             }
             "tag" => base.tag = Some(attribute.value),
             _ => return Ok(Some(attribute)),
+        }
+        Ok(None)
+    }
+
+    /// Handles the `FramePacking`, `AudioChannelConfiguration`, `ContentProtection`,
+    /// `OutputProtection`, `EssentialProperty`, and `SupplementalProperty` children
+    /// shared by `Period`, `AdaptationSet`, and `Representation` through the
+    /// embedded `RepresentationBase`, returning the element unconsumed when it is
+    /// none of those six.
+    fn apply_representation_base_child(
+        &mut self,
+        base: &mut RepresentationBase,
+        child: StartElement,
+    ) -> Result<Option<StartElement>> {
+        if child.matches(MPD_NAMESPACE, "FramePacking") {
+            self.path.push(PathSegment {
+                element_name: "FramePacking",
+                sibling_index: Some(base.frame_packings.len()),
+            });
+            let desc = self.parse_descriptor(child)?;
+            self.path.pop();
+            base.frame_packings.push(desc);
+        } else if child.matches(MPD_NAMESPACE, "AudioChannelConfiguration") {
+            self.path.push(PathSegment {
+                element_name: "AudioChannelConfiguration",
+                sibling_index: Some(base.audio_channel_configurations.len()),
+            });
+            let desc = self.parse_descriptor(child)?;
+            self.path.pop();
+            base.audio_channel_configurations.push(desc);
+        } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
+            self.path.push(PathSegment {
+                element_name: "ContentProtection",
+                sibling_index: Some(base.content_protections.len()),
+            });
+            let cp = self.parse_content_protection(child)?;
+            self.path.pop();
+            base.content_protections.push(cp);
+        } else if child.matches(MPD_NAMESPACE, "OutputProtection") {
+            self.parse_singular_child(
+                &mut base.output_protection,
+                "OutputProtection",
+                child,
+                Self::parse_descriptor,
+            )?;
+        } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
+            self.path.push(PathSegment {
+                element_name: "EssentialProperty",
+                sibling_index: Some(base.essential_properties.len()),
+            });
+            let desc = self.parse_descriptor(child)?;
+            self.path.pop();
+            base.essential_properties.push(desc);
+        } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
+            self.path.push(PathSegment {
+                element_name: "SupplementalProperty",
+                sibling_index: Some(base.supplemental_properties.len()),
+            });
+            let desc = self.parse_descriptor(child)?;
+            self.path.pop();
+            base.supplemental_properties.push(desc);
+        } else {
+            return Ok(Some(child));
         }
         Ok(None)
     }
@@ -2242,11 +2292,14 @@ mod tests {
             .adaptation_sets
             .first()
             .unwrap();
-        match adaptation_set.base.unknown_children.as_slice() {
+        match adaptation_set.base.content_protections.as_slice() {
             [content_protection] => {
-                assert_eq!(content_protection.name, "ContentProtection");
-                match content_protection.children.as_slice() {
-                    [Node::Element(pssh)] => {
+                assert_eq!(
+                    content_protection.base.scheme_id_uri,
+                    "urn:mpeg:dash:mp4protection:2011"
+                );
+                match content_protection.base.unknown_children.as_slice() {
+                    [pssh] => {
                         assert_eq!(pssh.name, "cenc:pssh");
                         assert_eq!(pssh.namespace.as_deref(), Some("urn:mpeg:cenc:2013"));
                         assert_eq!(pssh.children, vec![Node::Text("AAAA".to_string())]);
@@ -2254,7 +2307,7 @@ mod tests {
                     other => panic!("unexpected children: {other:?}"),
                 }
             }
-            other => panic!("unexpected unknown children: {other:?}"),
+            other => panic!("unexpected content protections: {other:?}"),
         }
     }
 
@@ -2615,5 +2668,57 @@ mod tests {
             "<Period/></MPD><MPD/>",
         );
         assert!(mpd_from_slice(input.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn adaptation_set_with_representation_base_children_roundtrips() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period>",
+            r#"<AdaptationSet contentType="video">"#,
+            r#"<FramePacking schemeIdUri="test:fp" value="1"/>"#,
+            r#"<ContentProtection schemeIdUri="test:cp" value="2"/>"#,
+            r#"<AudioChannelConfiguration schemeIdUri="test:acc" value="3"/>"#,
+            r#"<Accessibility schemeIdUri="test:acc1"/>"#,
+            r#"<Role schemeIdUri="test:role"/>"#,
+            "</AdaptationSet>",
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        let adaptation_set = mpd
+            .periods
+            .first()
+            .unwrap()
+            .adaptation_sets
+            .first()
+            .unwrap();
+        assert_eq!(adaptation_set.base.frame_packings.len(), 1);
+        assert_eq!(adaptation_set.base.content_protections.len(), 1);
+        assert_eq!(adaptation_set.base.audio_channel_configurations.len(), 1);
+        assert_eq!(adaptation_set.accessibilities.len(), 1);
+        assert_eq!(adaptation_set.roles.len(), 1);
+    }
+
+    #[test]
+    fn initialization_set_with_representation_base_children_roundtrips() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            r#"<InitializationSet id="1" contentType="video">"#,
+            r#"<FramePacking schemeIdUri="test:fp" value="1"/>"#,
+            r#"<AudioChannelConfiguration schemeIdUri="test:acc" value="2"/>"#,
+            r#"<EssentialProperty schemeIdUri="test:ep" value="3"/>"#,
+            r#"<Accessibility schemeIdUri="test:acc1"/>"#,
+            r#"<Role schemeIdUri="test:role"/>"#,
+            "</InitializationSet>",
+            "</MPD>",
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        let init_set = mpd.initialization_sets.first().unwrap();
+        assert_eq!(init_set.base.frame_packings.len(), 1);
+        assert_eq!(init_set.base.audio_channel_configurations.len(), 1);
+        assert_eq!(init_set.base.essential_properties.len(), 1);
+        assert_eq!(init_set.accessibilities.len(), 1);
+        assert_eq!(init_set.roles.len(), 1);
     }
 }
