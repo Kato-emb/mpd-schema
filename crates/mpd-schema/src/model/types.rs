@@ -422,6 +422,103 @@ impl fmt::Display for Ratio {
     }
 }
 
+/// A stream access point type, as written in attributes of XSD type
+/// `SAPType` (`startWithSAP`, `subsegmentStartsWithSAP`, ...).
+///
+/// The schema restricts the value space to `0..=6`; the constructor is the
+/// single enforcement point shared by hand-built models, parsing, and
+/// serialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct Sap(u8);
+
+impl Sap {
+    /// Creates a SAP type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorKind::InvalidValue`] when `value` is outside `0..=6`.
+    pub fn new(value: u8) -> Result<Self, Error> {
+        if value <= 6 {
+            Ok(Self(value))
+        } else {
+            Err(invalid_value(
+                &value.to_string(),
+                "a SAP type in the range 0..=6",
+            ))
+        }
+    }
+
+    /// The numeric value (`0..=6`).
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl FromStr for Sap {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "a SAP type in the range 0..=6";
+        let digits = input.strip_prefix('+').unwrap_or(input);
+        let parsed = parse_unsigned_digits(digits).ok_or_else(|| invalid_value(input, EXPECTED))?;
+        let parsed = u8::try_from(parsed).map_err(|_| invalid_value(input, EXPECTED))?;
+        Self::new(parsed).map_err(|_| invalid_value(input, EXPECTED))
+    }
+}
+
+impl fmt::Display for Sap {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+/// An `audioSamplingRate` value, as written in attributes of XSD type
+/// `AudioSamplingRateType`: a single rate, or a minimum/maximum pair.
+///
+/// The XSD expresses the value as a whitespace-separated `xs:unsignedInt`
+/// list of length 1 or 2; the two variants make the length restriction part
+/// of the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AudioSamplingRate {
+    /// A single sampling rate, such as `48000`.
+    Single(u32),
+    /// A minimum and maximum sampling rate, such as `44100 48000`.
+    MinMax(u32, u32),
+}
+
+impl FromStr for AudioSamplingRate {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "one or two unsigned integers";
+        let invalid = || invalid_value(input, EXPECTED);
+        let parse_rate = |text: &str| {
+            let digits = text.strip_prefix('+').unwrap_or(text);
+            parse_unsigned_digits(digits).ok_or_else(invalid)
+        };
+        let mut rates = input.split_ascii_whitespace();
+        let first = parse_rate(rates.next().ok_or_else(invalid)?)?;
+        let Some(second) = rates.next() else {
+            return Ok(Self::Single(first));
+        };
+        let second = parse_rate(second)?;
+        if rates.next().is_some() {
+            return Err(invalid());
+        }
+        Ok(Self::MinMax(first, second))
+    }
+}
+
+impl fmt::Display for AudioSamplingRate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Single(rate) => write!(formatter, "{rate}"),
+            Self::MinMax(minimum, maximum) => write!(formatter, "{minimum} {maximum}"),
+        }
+    }
+}
+
 /// A value of XSD type `ConditionalUintType`, the union of `xs:unsignedInt`
 /// and `xs:boolean`.
 ///
@@ -686,6 +783,46 @@ mod tests {
         for input in inputs {
             assert!(
                 input.parse::<Ratio>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn sap_enforces_the_value_range_at_construction_and_parse() {
+        assert_eq!(Sap::new(0).unwrap().get(), 0);
+        assert_eq!(Sap::new(6).unwrap().get(), 6);
+        assert!(Sap::new(7).is_err());
+
+        let parsed: Sap = "1".parse().unwrap();
+        assert_eq!(parsed, Sap::new(1).unwrap());
+        assert_eq!(parsed.to_string(), "1");
+        for input in ["7", "-1", "4294967296", "", "abc"] {
+            assert!(
+                input.parse::<Sap>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn audio_sampling_rate_parses_one_or_two_rates() {
+        assert_eq!(
+            "48000".parse::<AudioSamplingRate>().unwrap(),
+            AudioSamplingRate::Single(48_000)
+        );
+        assert_eq!(
+            "44100 48000".parse::<AudioSamplingRate>().unwrap(),
+            AudioSamplingRate::MinMax(44_100, 48_000)
+        );
+        assert_eq!(AudioSamplingRate::Single(48_000).to_string(), "48000");
+        assert_eq!(
+            AudioSamplingRate::MinMax(44_100, 48_000).to_string(),
+            "44100 48000"
+        );
+        for input in ["", " ", "1 2 3", "a", "44100 b"] {
+            assert!(
+                input.parse::<AudioSamplingRate>().is_err(),
                 "expected `{input}` to be rejected"
             );
         }

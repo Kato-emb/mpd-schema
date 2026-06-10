@@ -80,8 +80,9 @@ pub enum ErrorKind {
     ///
     /// The enclosing element is identified by [`Error::path`].
     UnexpectedText,
-    /// An element appeared where a different element is required, such as a
-    /// root element other than `MPD`.
+    /// An element that cannot be accepted at its position, such as a root
+    /// element other than `MPD`, or an unknown element outside any namespace
+    /// whose resolution would not survive a roundtrip.
     UnexpectedElement {
         /// The qualified name of the element found.
         name: String,

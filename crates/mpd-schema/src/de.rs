@@ -152,10 +152,7 @@ impl Deserializer<'_> {
                     max_subsegment_duration =
                         Some(self.parse_attribute("maxSubsegmentDuration", &attribute.value)?);
                 }
-                // 既定名前空間宣言は保持しない。シリアライザがルート MPD に
-                // MPD_NAMESPACE の宣言を再付与するため、保持すると重複した
-                // 宣言を出力してしまう。
-                "xmlns" => {}
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
                 _ => unknown_attributes.push((attribute.name, attribute.value)),
             }
         }
@@ -210,7 +207,7 @@ impl Deserializer<'_> {
                             parse_xs_boolean(&attribute.value),
                         )?);
                 }
-                "xmlns" => {}
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
                 _ => period
                     .unknown_attributes
                     .push((attribute.name, attribute.value)),
@@ -309,9 +306,8 @@ impl Deserializer<'_> {
                         )?);
                 }
                 "subsegmentStartsWithSAP" => {
-                    adaptation_set.subsegment_starts_with_sap = Some(
-                        self.in_attribute("subsegmentStartsWithSAP", parse_sap(&attribute.value))?,
-                    );
+                    adaptation_set.subsegment_starts_with_sap =
+                        Some(self.parse_attribute("subsegmentStartsWithSAP", &attribute.value)?);
                 }
                 "bitstreamSwitching" => {
                     adaptation_set.bitstream_switching =
@@ -329,7 +325,7 @@ impl Deserializer<'_> {
                 "initializationPrincipal" => {
                     adaptation_set.initialization_principal = Some(attribute.value);
                 }
-                "xmlns" => {}
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
                 _ => adaptation_set
                     .base
                     .unknown_attributes
@@ -395,7 +391,7 @@ impl Deserializer<'_> {
                 "mediaStreamStructureId" => {
                     media_stream_structure_id = parse_string_vector(&attribute.value);
                 }
-                "xmlns" => {}
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
                 _ => base
                     .unknown_attributes
                     .push((attribute.name, attribute.value)),
@@ -445,10 +441,8 @@ impl Deserializer<'_> {
                 base.frame_rate = Some(self.parse_attribute("frameRate", &attribute.value)?);
             }
             "audioSamplingRate" => {
-                base.audio_sampling_rate = self.in_attribute(
-                    "audioSamplingRate",
-                    parse_audio_sampling_rate(&attribute.value),
-                )?;
+                base.audio_sampling_rate =
+                    Some(self.parse_attribute("audioSamplingRate", &attribute.value)?);
             }
             "mimeType" => base.mime_type = Some(attribute.value),
             "segmentProfiles" => base.segment_profiles = parse_string_vector(&attribute.value),
@@ -459,8 +453,7 @@ impl Deserializer<'_> {
                     Some(self.in_attribute("maximumSAPPeriod", parse_xs_double(&attribute.value))?);
             }
             "startWithSAP" => {
-                base.start_with_sap =
-                    Some(self.in_attribute("startWithSAP", parse_sap(&attribute.value))?);
+                base.start_with_sap = Some(self.parse_attribute("startWithSAP", &attribute.value)?);
             }
             "maxPlayoutRate" => {
                 base.max_playout_rate =
@@ -511,6 +504,21 @@ impl Deserializer<'_> {
             return Err(self.element_error(ErrorKind::Xml(format!(
                 "unknown elements nested deeper than {MAX_UNKNOWN_ELEMENT_DEPTH}"
             ))));
+        }
+        // 既知要素の直下（depth 0）では、どの名前空間にも属さない無接頭辞の
+        // 未知要素を拒否する。シリアライザがルートに MPD_NAMESPACE の既定
+        // 宣言を置くため、そのような要素は再パースで MPD 名前空間に解決され、
+        // 名前が既知要素と一致すると型付きフィールドに化けて既知/未知の区分が
+        // 往復で安定しない。自前の `xmlns` 宣言（`xmlns=""` を含む）を持つ
+        // 要素は解決が文書の書き換えに依存しないため受理する。
+        if depth == 0
+            && start.namespace.is_none()
+            && !start
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "xmlns")
+        {
+            return Err(self.element_error(ErrorKind::UnexpectedElement { name: start.name }));
         }
         let StartElement {
             name,
@@ -581,6 +589,25 @@ impl Deserializer<'_> {
         error.path = format!("{} @ {attribute_name}", self.path_string());
         error
     }
+
+    /// 既知要素上の既定名前空間宣言は保持されない（シリアライザがルート MPD
+    /// に [`MPD_NAMESPACE`] を宣言し直す）ため、MPD 名前空間の宣言だけを
+    /// 受理して捨てる。異なる名前空間の宣言を黙って捨てると、無接頭辞の
+    /// 未知子孫要素の名前空間解決が roundtrip で変わるので拒否する。
+    fn check_default_namespace_declaration(&self, value: &str) -> Result<()> {
+        if value == MPD_NAMESPACE {
+            Ok(())
+        } else {
+            self.in_attribute(
+                "xmlns",
+                Err(invalid_value(
+                    value,
+                    "the MPD namespace; a different default namespace on a known \
+                     element does not survive serialization",
+                )),
+            )
+        }
+    }
 }
 
 fn is_xml_whitespace(text: &str) -> bool {
@@ -602,15 +629,6 @@ fn parse_xs_boolean(value: &str) -> Result<bool> {
 fn parse_xs_unsigned_int(value: &str) -> Result<u32> {
     let digits = value.strip_prefix('+').unwrap_or(value);
     parse_unsigned_digits(digits).ok_or_else(|| invalid_value(value, "an `xs:unsignedInt`"))
-}
-
-fn parse_sap(value: &str) -> Result<u32> {
-    let parsed = parse_xs_unsigned_int(value)?;
-    if parsed <= 6 {
-        Ok(parsed)
-    } else {
-        Err(invalid_value(value, "a SAP type in the range 0..=6"))
-    }
 }
 
 fn parse_xs_double(value: &str) -> Result<f64> {
@@ -645,15 +663,6 @@ fn parse_string_vector(value: &str) -> Vec<String> {
     value.split_ascii_whitespace().map(str::to_string).collect()
 }
 
-fn parse_audio_sampling_rate(value: &str) -> Result<Vec<u32>> {
-    let rates = parse_uint_vector(value)?;
-    if (1..=2).contains(&rates.len()) {
-        Ok(rates)
-    } else {
-        Err(invalid_value(value, "one or two unsigned integers"))
-    }
-}
-
 fn parse_string_no_whitespace(value: &str) -> Result<String> {
     if value.chars().any(char::is_whitespace) {
         Err(invalid_value(value, "a string without whitespace"))
@@ -667,7 +676,7 @@ mod tests {
     use super::*;
     use crate::model::element::Node;
     use crate::model::mpd::{ContentType, VideoScan};
-    use crate::model::types::FrameRate;
+    use crate::model::types::{AudioSamplingRate, FrameRate, Sap};
 
     const MINIMAL: &str = concat!(
         r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
@@ -739,10 +748,13 @@ mod tests {
         assert_eq!(representation.base.codecs.as_deref(), Some("avc1.640028"));
         assert_eq!(
             representation.base.audio_sampling_rate,
-            vec![44_100, 48_000]
+            Some(AudioSamplingRate::MinMax(44_100, 48_000))
         );
         assert_eq!(representation.base.scan_type, Some(VideoScan::Progressive));
-        assert_eq!(representation.base.start_with_sap, Some(1));
+        assert_eq!(
+            representation.base.start_with_sap,
+            Some(Sap::new(1).unwrap())
+        );
         assert_eq!(
             representation.dependency_id,
             vec!["a".to_string(), "b".to_string()]
@@ -869,6 +881,75 @@ mod tests {
                     }
                     other => panic!("unexpected children: {other:?}"),
                 }
+            }
+            other => panic!("unexpected unknown children: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn foreign_default_namespace_on_known_elements_is_rejected() {
+        // レビュー再現例: 接頭辞で一致した既知要素の外来既定宣言を黙って
+        // 捨てると、無接頭辞の未知子孫の解決が roundtrip で変わる。
+        let input = concat!(
+            r#"<ns1:MPD xmlns:ns1="urn:mpeg:dash:schema:mpd:2011" xmlns="urn:other" "#,
+            r#"profiles="p" minBufferTime="PT2S"><Foo/></ns1:MPD>"#,
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(
+            matches!(error.kind, ErrorKind::InvalidValue { ref value, .. } if value == "urn:other")
+        );
+        assert_eq!(error.path, "MPD @ xmlns");
+
+        let input = concat!(
+            r#"<ns1:MPD xmlns:ns1="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S"><ns1:Period xmlns="urn:other"/></ns1:MPD>"#,
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert_eq!(error.path, "MPD > Period[0] @ xmlns");
+    }
+
+    #[test]
+    fn redundant_mpd_default_namespace_on_known_elements_is_dropped() {
+        let input = concat!(
+            r#"<ns1:MPD xmlns:ns1="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S">"#,
+            r#"<ns1:Period xmlns="urn:mpeg:dash:schema:mpd:2011"/>"#,
+            "</ns1:MPD>",
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        let period = mpd.periods.first().unwrap();
+        assert!(period.unknown_attributes.is_empty());
+    }
+
+    #[test]
+    fn unbound_unknown_child_of_known_element_is_rejected() {
+        // 無接頭辞かつどの名前空間にも属さない未知要素は、再シリアライズで
+        // MPD 名前空間に入り、名前次第で型付き要素に化けるため受理しない。
+        let input = concat!(
+            r#"<ns1:MPD xmlns:ns1="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S"><Period/></ns1:MPD>"#,
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(matches!(
+            error.kind,
+            ErrorKind::UnexpectedElement { ref name } if name == "Period"
+        ));
+        assert_eq!(error.path, "MPD");
+    }
+
+    #[test]
+    fn undeclared_default_namespace_on_unknown_child_is_accepted() {
+        // `xmlns=""` を自分で持つ要素は解決が書き換えに依存しないため受理。
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+            r#"minBufferTime="PT2S"><Foo xmlns=""/></MPD>"#,
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        match mpd.unknown_children.as_slice() {
+            [foo] => {
+                assert_eq!(foo.name, "Foo");
+                assert_eq!(foo.namespace, None);
+                assert_eq!(foo.attributes, vec![("xmlns".to_string(), String::new())]);
             }
             other => panic!("unexpected unknown children: {other:?}"),
         }

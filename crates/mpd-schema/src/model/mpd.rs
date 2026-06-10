@@ -13,7 +13,9 @@ use std::str::FromStr;
 
 use crate::error::Error;
 use crate::model::element::Element;
-use crate::model::types::{FrameRate, Ratio, XsDateTime, XsDuration, invalid_value};
+use crate::model::types::{
+    AudioSamplingRate, FrameRate, Ratio, Sap, XsDateTime, XsDuration, invalid_value,
+};
 
 /// The XML namespace that `DASH-MPD.xsd` assigns to MPD documents.
 pub const MPD_NAMESPACE: &str = "urn:mpeg:dash:schema:mpd:2011";
@@ -168,9 +170,8 @@ pub struct RepresentationBase {
     pub sar: Option<Ratio>,
     /// The `frameRate` attribute.
     pub frame_rate: Option<FrameRate>,
-    /// The `audioSamplingRate` attribute: one rate, or a minimum/maximum
-    /// pair. Empty means absent.
-    pub audio_sampling_rate: Vec<u32>,
+    /// The `audioSamplingRate` attribute.
+    pub audio_sampling_rate: Option<AudioSamplingRate>,
     /// The `mimeType` attribute.
     pub mime_type: Option<String>,
     /// The `segmentProfiles` attribute, split on whitespace. Empty means
@@ -183,8 +184,8 @@ pub struct RepresentationBase {
     pub container_profiles: Vec<String>,
     /// The `maximumSAPPeriod` attribute.
     pub maximum_sap_period: Option<f64>,
-    /// The `startWithSAP` attribute (`0..=6`).
-    pub start_with_sap: Option<u32>,
+    /// The `startWithSAP` attribute.
+    pub start_with_sap: Option<Sap>,
     /// The `maxPlayoutRate` attribute.
     pub max_playout_rate: Option<f64>,
     /// The `codingDependency` attribute.
@@ -287,8 +288,8 @@ pub struct AdaptationSet {
     pub segment_alignment: Option<bool>,
     /// The `subsegmentAlignment` attribute.
     pub subsegment_alignment: Option<bool>,
-    /// The `subsegmentStartsWithSAP` attribute (`0..=6`).
-    pub subsegment_starts_with_sap: Option<u32>,
+    /// The `subsegmentStartsWithSAP` attribute.
+    pub subsegment_starts_with_sap: Option<Sap>,
     /// The `bitstreamSwitching` attribute.
     pub bitstream_switching: Option<bool>,
     /// The `initializationSetRef` attribute, split on whitespace. Empty

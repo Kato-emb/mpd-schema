@@ -249,7 +249,11 @@ fn push_representation_base_attributes(attributes: &mut Vec<Attribute>, base: &R
     push_optional(attributes, "height", base.height.as_ref());
     push_optional(attributes, "sar", base.sar.as_ref());
     push_optional(attributes, "frameRate", base.frame_rate.as_ref());
-    push_list(attributes, "audioSamplingRate", &base.audio_sampling_rate);
+    push_optional(
+        attributes,
+        "audioSamplingRate",
+        base.audio_sampling_rate.as_ref(),
+    );
     push_optional(attributes, "mimeType", base.mime_type.as_ref());
     push_list(attributes, "segmentProfiles", &base.segment_profiles);
     push_optional(attributes, "codecs", base.codecs.as_ref());

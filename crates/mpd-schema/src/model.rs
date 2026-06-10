@@ -9,4 +9,6 @@ pub use mpd::{
     AdaptationSet, ContentType, MPD_NAMESPACE, Mpd, Period, PresentationType, Representation,
     RepresentationBase, VideoScan,
 };
-pub use types::{ConditionalUint, FrameRate, Ratio, XsDateTime, XsDuration};
+pub use types::{
+    AudioSamplingRate, ConditionalUint, FrameRate, Ratio, Sap, XsDateTime, XsDuration,
+};
