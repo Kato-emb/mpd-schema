@@ -14,6 +14,10 @@ use crate::model::element::{Element, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, Representation, RepresentationBase,
 };
+use crate::model::segment::{
+    FailoverContent, Fcs, MultipleSegmentBase, S, SegmentBase, SegmentList, SegmentTemplate,
+    SegmentTimeline, SegmentUrl, Url,
+};
 
 pub(crate) fn write_mpd<W: io::Write>(mpd: &Mpd, sink: W) -> Result<W> {
     let mut writer = Writer::new(sink);
@@ -101,6 +105,12 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
     push_unknown_attributes(&mut attributes, &period.unknown_attributes);
 
     start_element(writer, "Period", attributes)?;
+    emit_segment_children(
+        writer,
+        period.segment_base.as_ref(),
+        period.segment_list.as_ref(),
+        period.segment_template.as_ref(),
+    )?;
     for adaptation_set in &period.adaptation_sets {
         emit_adaptation_set(writer, adaptation_set)?;
     }
@@ -196,6 +206,12 @@ fn emit_adaptation_set<W: io::Write>(
     push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes);
 
     start_element(writer, "AdaptationSet", attributes)?;
+    emit_segment_children(
+        writer,
+        adaptation_set.segment_base.as_ref(),
+        adaptation_set.segment_list.as_ref(),
+        adaptation_set.segment_template.as_ref(),
+    )?;
     for representation in &adaptation_set.representations {
         emit_representation(writer, representation)?;
     }
@@ -239,7 +255,249 @@ fn emit_representation<W: io::Write>(
     push_unknown_attributes(&mut attributes, &representation.base.unknown_attributes);
 
     start_element(writer, "Representation", attributes)?;
+    emit_segment_children(
+        writer,
+        representation.segment_base.as_ref(),
+        representation.segment_list.as_ref(),
+        representation.segment_template.as_ref(),
+    )?;
     emit_unknown_children(writer, &representation.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_segment_children<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_base: Option<&SegmentBase>,
+    segment_list: Option<&SegmentList>,
+    segment_template: Option<&SegmentTemplate>,
+) -> Result<()> {
+    if let Some(segment_base) = segment_base {
+        emit_segment_base(writer, segment_base)?;
+    }
+    if let Some(segment_list) = segment_list {
+        emit_segment_list(writer, segment_list)?;
+    }
+    if let Some(segment_template) = segment_template {
+        emit_segment_template(writer, segment_template)?;
+    }
+    Ok(())
+}
+
+fn emit_segment_base<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_base: &SegmentBase,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_segment_base_attributes(&mut attributes, segment_base);
+    push_unknown_attributes(&mut attributes, &segment_base.unknown_attributes);
+    start_element(writer, "SegmentBase", attributes)?;
+    emit_segment_base_children(writer, segment_base)?;
+    emit_unknown_children(writer, &segment_base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_segment_list<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_list: &SegmentList,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_multiple_segment_base_attributes(&mut attributes, &segment_list.base);
+    push_unknown_attributes(&mut attributes, &segment_list.base.base.unknown_attributes);
+    start_element(writer, "SegmentList", attributes)?;
+    emit_multiple_segment_base_children(writer, &segment_list.base)?;
+    for segment_url in &segment_list.segment_urls {
+        emit_segment_url(writer, segment_url)?;
+    }
+    emit_unknown_children(writer, &segment_list.base.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_segment_template<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_template: &SegmentTemplate,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_multiple_segment_base_attributes(&mut attributes, &segment_template.base);
+    push_optional(&mut attributes, "media", segment_template.media.as_ref());
+    push_optional(&mut attributes, "index", segment_template.index.as_ref());
+    push_optional(
+        &mut attributes,
+        "initialization",
+        segment_template.initialization.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "bitstreamSwitching",
+        segment_template.bitstream_switching.as_ref(),
+    );
+    push_unknown_attributes(
+        &mut attributes,
+        &segment_template.base.base.unknown_attributes,
+    );
+    start_element(writer, "SegmentTemplate", attributes)?;
+    emit_multiple_segment_base_children(writer, &segment_template.base)?;
+    emit_unknown_children(writer, &segment_template.base.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn push_segment_base_attributes(attributes: &mut Vec<Attribute>, segment_base: &SegmentBase) {
+    push_optional(attributes, "timescale", segment_base.timescale.as_ref());
+    push_optional(attributes, "eptDelta", segment_base.ept_delta.as_ref());
+    push_optional(attributes, "pdDelta", segment_base.pd_delta.as_ref());
+    push_optional(
+        attributes,
+        "presentationTimeOffset",
+        segment_base.presentation_time_offset.as_ref(),
+    );
+    push_optional(
+        attributes,
+        "presentationDuration",
+        segment_base.presentation_duration.as_ref(),
+    );
+    push_optional(
+        attributes,
+        "timeShiftBufferDepth",
+        segment_base.time_shift_buffer_depth.as_ref(),
+    );
+    push_optional(attributes, "indexRange", segment_base.index_range.as_ref());
+    push_optional(
+        attributes,
+        "indexRangeExact",
+        segment_base.index_range_exact.as_ref(),
+    );
+    if let Some(availability_time_offset) = segment_base.availability_time_offset {
+        push_attribute(
+            attributes,
+            "availabilityTimeOffset",
+            xs_double_lexical(availability_time_offset),
+        );
+    }
+    push_optional(
+        attributes,
+        "availabilityTimeComplete",
+        segment_base.availability_time_complete.as_ref(),
+    );
+}
+
+fn push_multiple_segment_base_attributes(
+    attributes: &mut Vec<Attribute>,
+    base: &MultipleSegmentBase,
+) {
+    push_segment_base_attributes(attributes, &base.base);
+    push_optional(attributes, "duration", base.duration.as_ref());
+    push_optional(attributes, "startNumber", base.start_number.as_ref());
+    push_optional(attributes, "endNumber", base.end_number.as_ref());
+}
+
+fn emit_segment_base_children<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_base: &SegmentBase,
+) -> Result<()> {
+    if let Some(initialization) = &segment_base.initialization {
+        emit_url(writer, "Initialization", initialization)?;
+    }
+    if let Some(representation_index) = &segment_base.representation_index {
+        emit_url(writer, "RepresentationIndex", representation_index)?;
+    }
+    if let Some(failover_content) = &segment_base.failover_content {
+        emit_failover_content(writer, failover_content)?;
+    }
+    Ok(())
+}
+
+fn emit_multiple_segment_base_children<W: io::Write>(
+    writer: &mut Writer<W>,
+    base: &MultipleSegmentBase,
+) -> Result<()> {
+    emit_segment_base_children(writer, &base.base)?;
+    if let Some(segment_timeline) = &base.segment_timeline {
+        emit_segment_timeline(writer, segment_timeline)?;
+    }
+    if let Some(bitstream_switching) = &base.bitstream_switching {
+        emit_url(writer, "BitstreamSwitching", bitstream_switching)?;
+    }
+    Ok(())
+}
+
+fn emit_url<W: io::Write>(writer: &mut Writer<W>, name: &str, url: &Url) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "sourceURL", url.source_url.as_ref());
+    push_optional(&mut attributes, "range", url.range.as_ref());
+    push_unknown_attributes(&mut attributes, &url.unknown_attributes);
+    start_element(writer, name, attributes)?;
+    emit_unknown_children(writer, &url.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_failover_content<W: io::Write>(
+    writer: &mut Writer<W>,
+    failover_content: &FailoverContent,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "valid", failover_content.valid.as_ref());
+    push_unknown_attributes(&mut attributes, &failover_content.unknown_attributes);
+    start_element(writer, "FailoverContent", attributes)?;
+    for fcs in &failover_content.fcs_entries {
+        emit_fcs(writer, fcs)?;
+    }
+    emit_unknown_children(writer, &failover_content.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_fcs<W: io::Write>(writer: &mut Writer<W>, fcs: &Fcs) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "t", fcs.t);
+    push_optional(&mut attributes, "d", fcs.d.as_ref());
+    push_unknown_attributes(&mut attributes, &fcs.unknown_attributes);
+    start_element(writer, "FCS", attributes)?;
+    emit_unknown_children(writer, &fcs.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_segment_timeline<W: io::Write>(
+    writer: &mut Writer<W>,
+    segment_timeline: &SegmentTimeline,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_unknown_attributes(&mut attributes, &segment_timeline.unknown_attributes);
+    start_element(writer, "SegmentTimeline", attributes)?;
+    for segment in &segment_timeline.segments {
+        emit_s(writer, segment)?;
+    }
+    emit_unknown_children(writer, &segment_timeline.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_s<W: io::Write>(writer: &mut Writer<W>, segment: &S) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "t", segment.t.as_ref());
+    push_optional(&mut attributes, "n", segment.n.as_ref());
+    push_attribute(&mut attributes, "d", segment.d);
+    push_optional(&mut attributes, "r", segment.r.as_ref());
+    push_optional(&mut attributes, "k", segment.k.as_ref());
+    push_unknown_attributes(&mut attributes, &segment.unknown_attributes);
+    start_element(writer, "S", attributes)?;
+    emit_unknown_children(writer, &segment.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_segment_url<W: io::Write>(writer: &mut Writer<W>, segment_url: &SegmentUrl) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "media", segment_url.media.as_ref());
+    push_optional(
+        &mut attributes,
+        "mediaRange",
+        segment_url.media_range.as_ref(),
+    );
+    push_optional(&mut attributes, "index", segment_url.index.as_ref());
+    push_optional(
+        &mut attributes,
+        "indexRange",
+        segment_url.index_range.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &segment_url.unknown_attributes);
+    start_element(writer, "SegmentURL", attributes)?;
+    emit_unknown_children(writer, &segment_url.unknown_children)?;
     writer.write_event(&Event::End)
 }
 
@@ -527,6 +785,114 @@ mod tests {
         assert!(output.contains(r#"minBufferTime="PT2M""#));
         assert!(output.contains(r#"availabilityStartTime="2026-06-10T00:00:00Z""#));
         assert!(output.contains(r#"bitstreamSwitching="true""#));
+    }
+
+    #[test]
+    fn live_profile_segment_template_roundtrips() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" type="dynamic" "#,
+            r#"availabilityStartTime="2026-06-10T00:00:00Z" minBufferTime="PT2S">"#,
+            "<Period>",
+            r#"<SegmentTemplate timescale="90000" duration="180000"/>"#,
+            r#"<AdaptationSet mimeType="video/mp4">"#,
+            r#"<SegmentTemplate timescale="90000" startNumber="1" presentationTimeOffset="900000" "#,
+            r#"media="seg-$RepresentationID$-$Number%05d$.m4s" initialization="init-$RepresentationID$.mp4" "#,
+            r#"bitstreamSwitching="bs.mp4">"#,
+            r#"<SegmentTimeline><S t="0" d="180000" r="24"/><S d="90000"/></SegmentTimeline>"#,
+            r#"<BitstreamSwitching sourceURL="bs-element.mp4"/>"#,
+            "</SegmentTemplate>",
+            r#"<Representation id="v0" bandwidth="1000"/>"#,
+            "</AdaptationSet>",
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+
+        let segment_template_position = output.rfind("<SegmentTemplate").unwrap();
+        let representation_position = output.find("<Representation").unwrap();
+        assert!(
+            segment_template_position < representation_position,
+            "SegmentTemplate must precede Representation: {output}"
+        );
+        assert!(output.contains(r#"media="seg-$RepresentationID$-$Number%05d$.m4s""#));
+        assert!(output.contains(r#"<S t="0" d="180000" r="24"></S>"#));
+    }
+
+    #[test]
+    fn on_demand_profile_segment_base_roundtrips() {
+        assert_roundtrip(concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><AdaptationSet>",
+            r#"<Representation id="v0" bandwidth="1000">"#,
+            r#"<SegmentBase timescale="48000" indexRange="0-499" indexRangeExact="true" "#,
+            r#"availabilityTimeOffset="INF" eptDelta="-1" presentationTimeOffset="100">"#,
+            r#"<Initialization sourceURL="init.mp4" range="0-99"/>"#,
+            r#"<RepresentationIndex sourceURL="index.sidx"/>"#,
+            r#"<FailoverContent valid="false"><FCS t="0" d="48000"/><FCS t="96000"/></FailoverContent>"#,
+            "</SegmentBase>",
+            "</Representation>",
+            "</AdaptationSet></Period>",
+            "</MPD>",
+        ));
+    }
+
+    #[test]
+    fn segment_list_roundtrips() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period>",
+            r#"<SegmentList timescale="48000" duration="96000" startNumber="1" endNumber="2">"#,
+            r#"<Initialization sourceURL="init.mp4"/>"#,
+            r#"<SegmentURL media="s1.mp4" mediaRange="0-499" index="i1.idx" indexRange="500-"/>"#,
+            r#"<SegmentURL media="s2.mp4"/>"#,
+            "</SegmentList>",
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+
+        let initialization_position = output.find("<Initialization").unwrap();
+        let segment_url_position = output.find("<SegmentURL").unwrap();
+        assert!(
+            initialization_position < segment_url_position,
+            "Initialization must precede SegmentURL: {output}"
+        );
+        assert!(output.contains(r#"indexRange="500-""#));
+    }
+
+    #[test]
+    fn unknown_content_inside_segment_elements_roundtrips() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period>",
+            r#"<SegmentTemplate xmlns:custom="urn:example:custom" custom:hint="x" media="$Number$.m4s">"#,
+            r#"<SegmentTimeline><S d="100"/></SegmentTimeline>"#,
+            r#"<custom:Extra>data</custom:Extra>"#,
+            "</SegmentTemplate>",
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let segment_template = mpd
+            .periods
+            .first()
+            .unwrap()
+            .segment_template
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            segment_template.base.base.unknown_attributes,
+            vec![
+                ("xmlns:custom".to_string(), "urn:example:custom".to_string()),
+                ("custom:hint".to_string(), "x".to_string()),
+            ]
+        );
+        match segment_template.base.base.unknown_children.as_slice() {
+            [extra] => assert_eq!(extra.name, "custom:Extra"),
+            other => panic!("unexpected unknown children: {other:?}"),
+        }
     }
 
     #[test]

@@ -14,6 +14,10 @@ use crate::model::element::{Element, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, PresentationType, Representation, RepresentationBase,
 };
+use crate::model::segment::{
+    FailoverContent, Fcs, MultipleSegmentBase, S, SegmentBase, SegmentList, SegmentTemplate,
+    SegmentTimeline, SegmentUrl, Url,
+};
 use crate::model::types::{XsDateTime, XsDuration, invalid_value, parse_unsigned_digits};
 
 /// 未知サブツリーは再帰で読むが、スキーマと違って深さに上限がないため、
@@ -215,6 +219,15 @@ impl Deserializer<'_> {
         }
 
         while let Some(child) = self.next_content_event()? {
+            let Some(child) = self.apply_segment_child(
+                &mut period.segment_base,
+                &mut period.segment_list,
+                &mut period.segment_template,
+                child,
+            )?
+            else {
+                continue;
+            };
             if child.matches(MPD_NAMESPACE, "AdaptationSet") {
                 self.path.push(PathSegment {
                     element_name: "AdaptationSet",
@@ -334,6 +347,15 @@ impl Deserializer<'_> {
         }
 
         while let Some(child) = self.next_content_event()? {
+            let Some(child) = self.apply_segment_child(
+                &mut adaptation_set.segment_base,
+                &mut adaptation_set.segment_list,
+                &mut adaptation_set.segment_template,
+                child,
+            )?
+            else {
+                continue;
+            };
             if child.matches(MPD_NAMESPACE, "Representation") {
                 self.path.push(PathSegment {
                     element_name: "Representation",
@@ -410,6 +432,15 @@ impl Deserializer<'_> {
         representation.media_stream_structure_id = media_stream_structure_id;
 
         while let Some(child) = self.next_content_event()? {
+            let Some(child) = self.apply_segment_child(
+                &mut representation.segment_base,
+                &mut representation.segment_list,
+                &mut representation.segment_template,
+                child,
+            )?
+            else {
+                continue;
+            };
             representation
                 .base
                 .unknown_children
@@ -478,6 +509,501 @@ impl Deserializer<'_> {
             _ => return Ok(Some(attribute)),
         }
         Ok(None)
+    }
+
+    /// Handles the `SegmentBase` / `SegmentList` / `SegmentTemplate` children
+    /// shared by `Period`, `AdaptationSet`, and `Representation`, returning
+    /// the element unconsumed when it is none of the three.
+    fn apply_segment_child(
+        &mut self,
+        segment_base: &mut Option<SegmentBase>,
+        segment_list: &mut Option<SegmentList>,
+        segment_template: &mut Option<SegmentTemplate>,
+        child: StartElement,
+    ) -> Result<Option<StartElement>> {
+        if child.matches(MPD_NAMESPACE, "SegmentBase") {
+            if segment_base.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "SegmentBase",
+                sibling_index: None,
+            });
+            let parsed = self.parse_segment_base(child)?;
+            self.path.pop();
+            *segment_base = Some(parsed);
+        } else if child.matches(MPD_NAMESPACE, "SegmentList") {
+            if segment_list.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "SegmentList",
+                sibling_index: None,
+            });
+            let parsed = self.parse_segment_list(child)?;
+            self.path.pop();
+            *segment_list = Some(parsed);
+        } else if child.matches(MPD_NAMESPACE, "SegmentTemplate") {
+            if segment_template.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "SegmentTemplate",
+                sibling_index: None,
+            });
+            let parsed = self.parse_segment_template(child)?;
+            self.path.pop();
+            *segment_template = Some(parsed);
+        } else {
+            return Ok(Some(child));
+        }
+        Ok(None)
+    }
+
+    fn parse_segment_base(&mut self, start: StartElement) -> Result<SegmentBase> {
+        let mut segment_base = SegmentBase::new();
+        for attribute in start.attributes {
+            if let Some(attribute) =
+                self.apply_segment_base_attribute(&mut segment_base, attribute)?
+            {
+                match attribute.name.as_str() {
+                    "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                    _ => segment_base
+                        .unknown_attributes
+                        .push((attribute.name, attribute.value)),
+                }
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            if let Some(child) = self.apply_segment_base_child(&mut segment_base, child)? {
+                segment_base
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(segment_base)
+    }
+
+    fn parse_segment_list(&mut self, start: StartElement) -> Result<SegmentList> {
+        let mut segment_list = SegmentList::new();
+        for attribute in start.attributes {
+            if let Some(attribute) =
+                self.apply_multiple_segment_base_attribute(&mut segment_list.base, attribute)?
+            {
+                match attribute.name.as_str() {
+                    "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                    _ => segment_list
+                        .base
+                        .base
+                        .unknown_attributes
+                        .push((attribute.name, attribute.value)),
+                }
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "SegmentURL") {
+                self.path.push(PathSegment {
+                    element_name: "SegmentURL",
+                    sibling_index: Some(segment_list.segment_urls.len()),
+                });
+                let segment_url = self.parse_segment_url(child)?;
+                self.path.pop();
+                segment_list.segment_urls.push(segment_url);
+            } else if let Some(child) =
+                self.apply_multiple_segment_base_child(&mut segment_list.base, child)?
+            {
+                segment_list
+                    .base
+                    .base
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(segment_list)
+    }
+
+    fn parse_segment_template(&mut self, start: StartElement) -> Result<SegmentTemplate> {
+        let mut segment_template = SegmentTemplate::new();
+        for attribute in start.attributes {
+            let Some(attribute) =
+                self.apply_multiple_segment_base_attribute(&mut segment_template.base, attribute)?
+            else {
+                continue;
+            };
+            match attribute.name.as_str() {
+                "media" => segment_template.media = Some(attribute.value),
+                "index" => segment_template.index = Some(attribute.value),
+                "initialization" => segment_template.initialization = Some(attribute.value),
+                "bitstreamSwitching" => {
+                    segment_template.bitstream_switching = Some(attribute.value);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => segment_template
+                    .base
+                    .base
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            if let Some(child) =
+                self.apply_multiple_segment_base_child(&mut segment_template.base, child)?
+            {
+                segment_template
+                    .base
+                    .base
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(segment_template)
+    }
+
+    /// Applies one attribute of an element extending `SegmentBaseType` to the
+    /// embedded base, returning the attribute unconsumed when it belongs to
+    /// the extending type.
+    fn apply_segment_base_attribute(
+        &self,
+        segment_base: &mut SegmentBase,
+        attribute: Attribute,
+    ) -> Result<Option<Attribute>> {
+        match attribute.name.as_str() {
+            "timescale" => {
+                segment_base.timescale =
+                    Some(self.in_attribute("timescale", parse_xs_unsigned_int(&attribute.value))?);
+            }
+            "eptDelta" => {
+                segment_base.ept_delta =
+                    Some(self.in_attribute("eptDelta", parse_xs_integer(&attribute.value))?);
+            }
+            "pdDelta" => {
+                segment_base.pd_delta =
+                    Some(self.in_attribute("pdDelta", parse_xs_integer(&attribute.value))?);
+            }
+            "presentationTimeOffset" => {
+                segment_base.presentation_time_offset = Some(self.in_attribute(
+                    "presentationTimeOffset",
+                    parse_xs_unsigned_long(&attribute.value),
+                )?);
+            }
+            "presentationDuration" => {
+                segment_base.presentation_duration = Some(self.in_attribute(
+                    "presentationDuration",
+                    parse_xs_unsigned_long(&attribute.value),
+                )?);
+            }
+            "timeShiftBufferDepth" => {
+                segment_base.time_shift_buffer_depth =
+                    Some(self.parse_attribute("timeShiftBufferDepth", &attribute.value)?);
+            }
+            "indexRange" => {
+                segment_base.index_range = Some(
+                    self.in_attribute("indexRange", parse_single_rfc7233_range(&attribute.value))?,
+                );
+            }
+            "indexRangeExact" => {
+                segment_base.index_range_exact =
+                    Some(self.in_attribute("indexRangeExact", parse_xs_boolean(&attribute.value))?);
+            }
+            "availabilityTimeOffset" => {
+                segment_base.availability_time_offset = Some(
+                    self.in_attribute("availabilityTimeOffset", parse_xs_double(&attribute.value))?,
+                );
+            }
+            "availabilityTimeComplete" => {
+                segment_base.availability_time_complete = Some(self.in_attribute(
+                    "availabilityTimeComplete",
+                    parse_xs_boolean(&attribute.value),
+                )?);
+            }
+            _ => return Ok(Some(attribute)),
+        }
+        Ok(None)
+    }
+
+    /// Applies one child of an element extending `SegmentBaseType` to the
+    /// embedded base, returning the element unconsumed when it belongs to
+    /// the extending type.
+    fn apply_segment_base_child(
+        &mut self,
+        segment_base: &mut SegmentBase,
+        child: StartElement,
+    ) -> Result<Option<StartElement>> {
+        if child.matches(MPD_NAMESPACE, "Initialization") {
+            if segment_base.initialization.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "Initialization",
+                sibling_index: None,
+            });
+            let url = self.parse_url(child)?;
+            self.path.pop();
+            segment_base.initialization = Some(url);
+        } else if child.matches(MPD_NAMESPACE, "RepresentationIndex") {
+            if segment_base.representation_index.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "RepresentationIndex",
+                sibling_index: None,
+            });
+            let url = self.parse_url(child)?;
+            self.path.pop();
+            segment_base.representation_index = Some(url);
+        } else if child.matches(MPD_NAMESPACE, "FailoverContent") {
+            if segment_base.failover_content.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "FailoverContent",
+                sibling_index: None,
+            });
+            let failover_content = self.parse_failover_content(child)?;
+            self.path.pop();
+            segment_base.failover_content = Some(failover_content);
+        } else {
+            return Ok(Some(child));
+        }
+        Ok(None)
+    }
+
+    /// Applies one attribute of an element extending
+    /// `MultipleSegmentBaseType` to the embedded base, returning the
+    /// attribute unconsumed when it belongs to the extending type.
+    fn apply_multiple_segment_base_attribute(
+        &self,
+        base: &mut MultipleSegmentBase,
+        attribute: Attribute,
+    ) -> Result<Option<Attribute>> {
+        let Some(attribute) = self.apply_segment_base_attribute(&mut base.base, attribute)? else {
+            return Ok(None);
+        };
+        match attribute.name.as_str() {
+            "duration" => {
+                base.duration =
+                    Some(self.in_attribute("duration", parse_xs_unsigned_int(&attribute.value))?);
+            }
+            "startNumber" => {
+                base.start_number = Some(
+                    self.in_attribute("startNumber", parse_xs_unsigned_int(&attribute.value))?,
+                );
+            }
+            "endNumber" => {
+                base.end_number =
+                    Some(self.in_attribute("endNumber", parse_xs_unsigned_int(&attribute.value))?);
+            }
+            _ => return Ok(Some(attribute)),
+        }
+        Ok(None)
+    }
+
+    /// Applies one child of an element extending `MultipleSegmentBaseType`
+    /// to the embedded base, returning the element unconsumed when it
+    /// belongs to the extending type.
+    fn apply_multiple_segment_base_child(
+        &mut self,
+        base: &mut MultipleSegmentBase,
+        child: StartElement,
+    ) -> Result<Option<StartElement>> {
+        let Some(child) = self.apply_segment_base_child(&mut base.base, child)? else {
+            return Ok(None);
+        };
+        if child.matches(MPD_NAMESPACE, "SegmentTimeline") {
+            if base.segment_timeline.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "SegmentTimeline",
+                sibling_index: None,
+            });
+            let segment_timeline = self.parse_segment_timeline(child)?;
+            self.path.pop();
+            base.segment_timeline = Some(segment_timeline);
+        } else if child.matches(MPD_NAMESPACE, "BitstreamSwitching") {
+            if base.bitstream_switching.is_some() {
+                return Err(self.duplicate_element(child.name));
+            }
+            self.path.push(PathSegment {
+                element_name: "BitstreamSwitching",
+                sibling_index: None,
+            });
+            let url = self.parse_url(child)?;
+            self.path.pop();
+            base.bitstream_switching = Some(url);
+        } else {
+            return Ok(Some(child));
+        }
+        Ok(None)
+    }
+
+    fn parse_url(&mut self, start: StartElement) -> Result<Url> {
+        let mut url = Url::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "sourceURL" => url.source_url = Some(attribute.value),
+                "range" => {
+                    url.range = Some(
+                        self.in_attribute("range", parse_single_rfc7233_range(&attribute.value))?,
+                    );
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => url
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            url.unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(url)
+    }
+
+    fn parse_failover_content(&mut self, start: StartElement) -> Result<FailoverContent> {
+        let mut failover_content = FailoverContent::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "valid" => {
+                    failover_content.valid =
+                        Some(self.in_attribute("valid", parse_xs_boolean(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => failover_content
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "FCS") {
+                self.path.push(PathSegment {
+                    element_name: "FCS",
+                    sibling_index: Some(failover_content.fcs_entries.len()),
+                });
+                let fcs = self.parse_fcs(child)?;
+                self.path.pop();
+                failover_content.fcs_entries.push(fcs);
+            } else {
+                failover_content
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(failover_content)
+    }
+
+    fn parse_fcs(&mut self, start: StartElement) -> Result<Fcs> {
+        let mut t: Option<u64> = None;
+        let mut d: Option<u64> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "t" => t = Some(self.in_attribute("t", parse_xs_unsigned_long(&attribute.value))?),
+                "d" => d = Some(self.in_attribute("d", parse_xs_unsigned_long(&attribute.value))?),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+        let mut fcs = Fcs::new(t.ok_or_else(|| self.missing_attribute("t"))?);
+        fcs.d = d;
+        fcs.unknown_attributes = unknown_attributes;
+        while let Some(child) = self.next_content_event()? {
+            fcs.unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(fcs)
+    }
+
+    fn parse_segment_timeline(&mut self, start: StartElement) -> Result<SegmentTimeline> {
+        let mut segment_timeline = SegmentTimeline::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => segment_timeline
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "S") {
+                self.path.push(PathSegment {
+                    element_name: "S",
+                    sibling_index: Some(segment_timeline.segments.len()),
+                });
+                let segment = self.parse_s(child)?;
+                self.path.pop();
+                segment_timeline.segments.push(segment);
+            } else {
+                segment_timeline
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(segment_timeline)
+    }
+
+    fn parse_s(&mut self, start: StartElement) -> Result<S> {
+        let mut t: Option<u64> = None;
+        let mut n: Option<u64> = None;
+        let mut d: Option<u64> = None;
+        let mut r: Option<i64> = None;
+        let mut k: Option<u64> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "t" => t = Some(self.in_attribute("t", parse_xs_unsigned_long(&attribute.value))?),
+                "n" => n = Some(self.in_attribute("n", parse_xs_unsigned_long(&attribute.value))?),
+                "d" => d = Some(self.in_attribute("d", parse_xs_unsigned_long(&attribute.value))?),
+                "r" => r = Some(self.in_attribute("r", parse_xs_integer(&attribute.value))?),
+                "k" => k = Some(self.in_attribute("k", parse_xs_unsigned_long(&attribute.value))?),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+        let mut segment = S::new(d.ok_or_else(|| self.missing_attribute("d"))?);
+        segment.t = t;
+        segment.n = n;
+        segment.r = r;
+        segment.k = k;
+        segment.unknown_attributes = unknown_attributes;
+        while let Some(child) = self.next_content_event()? {
+            segment
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(segment)
+    }
+
+    fn parse_segment_url(&mut self, start: StartElement) -> Result<SegmentUrl> {
+        let mut segment_url = SegmentUrl::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "media" => segment_url.media = Some(attribute.value),
+                "mediaRange" => {
+                    segment_url.media_range = Some(self.in_attribute(
+                        "mediaRange",
+                        parse_single_rfc7233_range(&attribute.value),
+                    )?);
+                }
+                "index" => segment_url.index = Some(attribute.value),
+                "indexRange" => {
+                    segment_url.index_range = Some(self.in_attribute(
+                        "indexRange",
+                        parse_single_rfc7233_range(&attribute.value),
+                    )?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => segment_url
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+        while let Some(child) = self.next_content_event()? {
+            segment_url
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(segment_url)
     }
 
     /// Returns the next child element start, or `None` at the end of the
@@ -608,6 +1134,12 @@ impl Deserializer<'_> {
             )
         }
     }
+
+    /// Error for a second occurrence of a child the schema allows at most
+    /// once.
+    fn duplicate_element(&self, name: String) -> Error {
+        self.element_error(ErrorKind::UnexpectedElement { name })
+    }
 }
 
 fn is_xml_whitespace(text: &str) -> bool {
@@ -668,6 +1200,44 @@ fn parse_string_no_whitespace(value: &str) -> Result<String> {
         Err(invalid_value(value, "a string without whitespace"))
     } else {
         Ok(value.to_string())
+    }
+}
+
+fn parse_xs_unsigned_long(value: &str) -> Result<u64> {
+    const EXPECTED: &str = "an `xs:unsignedLong`";
+    let digits = value.strip_prefix('+').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid_value(value, EXPECTED));
+    }
+    digits.parse().map_err(|_| invalid_value(value, EXPECTED))
+}
+
+/// `xs:integer` は桁数無制限だが、値空間は `i64` に固定し表現不能値は拒否する
+/// （ADR-0008）。
+fn parse_xs_integer(value: &str) -> Result<i64> {
+    const EXPECTED: &str = "an `xs:integer` representable in 64 bits";
+    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid_value(value, EXPECTED));
+    }
+    value.parse().map_err(|_| invalid_value(value, EXPECTED))
+}
+
+/// Validates the `SingleRFC7233RangeType` pattern
+/// `([0-9]*)(-([0-9]*))?`; the value itself stays a string (see
+/// `model/segment.rs`).
+fn parse_single_rfc7233_range(value: &str) -> Result<String> {
+    const EXPECTED: &str = "a byte range such as `0-499`";
+    let (first, last) = match value.split_once('-') {
+        Some(parts) => parts,
+        None => (value, ""),
+    };
+    if first.bytes().all(|byte| byte.is_ascii_digit())
+        && last.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        Ok(value.to_string())
+    } else {
+        Err(invalid_value(value, EXPECTED))
     }
 }
 
@@ -1023,6 +1593,217 @@ mod tests {
         );
         let error = mpd_from_slice(input.as_bytes()).unwrap_err();
         assert!(matches!(error.kind, ErrorKind::InvalidValue { .. }));
+    }
+
+    #[test]
+    fn segment_template_with_timeline_parses() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><AdaptationSet>",
+            r#"<SegmentTemplate timescale="90000" duration="180000" startNumber="1" "#,
+            r#"presentationTimeOffset="900000" eptDelta="-100" "#,
+            r#"media="seg-$RepresentationID$-$Number%05d$.m4s" initialization="init-$RepresentationID$.mp4">"#,
+            r#"<SegmentTimeline><S t="0" d="180000" r="-1"/><S d="90000" k="2"/></SegmentTimeline>"#,
+            "</SegmentTemplate>",
+            "</AdaptationSet></Period>",
+            "</MPD>",
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        let adaptation_set = mpd
+            .periods
+            .first()
+            .unwrap()
+            .adaptation_sets
+            .first()
+            .unwrap();
+        let segment_template = adaptation_set.segment_template.as_ref().unwrap();
+        assert_eq!(segment_template.base.base.timescale, Some(90_000));
+        assert_eq!(segment_template.base.duration, Some(180_000));
+        assert_eq!(segment_template.base.start_number, Some(1));
+        assert_eq!(
+            segment_template.base.base.presentation_time_offset,
+            Some(900_000)
+        );
+        assert_eq!(segment_template.base.base.ept_delta, Some(-100));
+        assert_eq!(
+            segment_template.media.as_deref(),
+            Some("seg-$RepresentationID$-$Number%05d$.m4s")
+        );
+        assert_eq!(
+            segment_template.initialization.as_deref(),
+            Some("init-$RepresentationID$.mp4")
+        );
+
+        let timeline = segment_template.base.segment_timeline.as_ref().unwrap();
+        match timeline.segments.as_slice() {
+            [first, second] => {
+                assert_eq!(first.t, Some(0));
+                assert_eq!(first.d, 180_000);
+                assert_eq!(first.r, Some(-1));
+                assert_eq!(second.t, None);
+                assert_eq!(second.d, 90_000);
+                assert_eq!(second.k, Some(2));
+            }
+            other => panic!("unexpected segments: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn segment_base_and_list_parse_on_representation() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><AdaptationSet>",
+            r#"<Representation id="v0" bandwidth="1000">"#,
+            r#"<SegmentBase timescale="48000" indexRange="0-499" indexRangeExact="true" "#,
+            r#"availabilityTimeOffset="INF">"#,
+            r#"<Initialization sourceURL="init.mp4" range="0-99"/>"#,
+            r#"<FailoverContent valid="false"><FCS t="0" d="48000"/></FailoverContent>"#,
+            "</SegmentBase>",
+            "</Representation>",
+            r#"<Representation id="v1" bandwidth="2000">"#,
+            r#"<SegmentList duration="2"><SegmentURL media="s1.mp4" mediaRange="0-1"/>"#,
+            r#"<SegmentURL media="s2.mp4"/></SegmentList>"#,
+            "</Representation>",
+            "</AdaptationSet></Period>",
+            "</MPD>",
+        );
+        let mpd = mpd_from_slice(input.as_bytes()).unwrap();
+        let adaptation_set = mpd
+            .periods
+            .first()
+            .unwrap()
+            .adaptation_sets
+            .first()
+            .unwrap();
+
+        let segment_base = adaptation_set
+            .representations
+            .first()
+            .unwrap()
+            .segment_base
+            .as_ref()
+            .unwrap();
+        assert_eq!(segment_base.timescale, Some(48_000));
+        assert_eq!(segment_base.index_range.as_deref(), Some("0-499"));
+        assert_eq!(segment_base.index_range_exact, Some(true));
+        assert_eq!(segment_base.availability_time_offset, Some(f64::INFINITY));
+        let initialization = segment_base.initialization.as_ref().unwrap();
+        assert_eq!(initialization.source_url.as_deref(), Some("init.mp4"));
+        assert_eq!(initialization.range.as_deref(), Some("0-99"));
+        let failover_content = segment_base.failover_content.as_ref().unwrap();
+        assert_eq!(failover_content.valid, Some(false));
+        match failover_content.fcs_entries.as_slice() {
+            [fcs] => {
+                assert_eq!(fcs.t, 0);
+                assert_eq!(fcs.d, Some(48_000));
+            }
+            other => panic!("unexpected FCS entries: {other:?}"),
+        }
+
+        let segment_list = adaptation_set
+            .representations
+            .get(1)
+            .unwrap()
+            .segment_list
+            .as_ref()
+            .unwrap();
+        assert_eq!(segment_list.base.duration, Some(2));
+        match segment_list.segment_urls.as_slice() {
+            [first, second] => {
+                assert_eq!(first.media.as_deref(), Some("s1.mp4"));
+                assert_eq!(first.media_range.as_deref(), Some("0-1"));
+                assert_eq!(second.media.as_deref(), Some("s2.mp4"));
+            }
+            other => panic!("unexpected segment URLs: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duplicate_singular_segment_children_are_rejected() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><SegmentTemplate/><SegmentTemplate/></Period>",
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(matches!(
+            error.kind,
+            ErrorKind::UnexpectedElement { ref name } if name == "SegmentTemplate"
+        ));
+        assert_eq!(error.path, "MPD > Period[0]");
+
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><SegmentBase><Initialization/><Initialization/></SegmentBase></Period>",
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::UnexpectedElement { .. }));
+        assert_eq!(error.path, "MPD > Period[0] > SegmentBase");
+    }
+
+    #[test]
+    fn missing_s_duration_reports_the_path() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            "<Period><SegmentTemplate><SegmentTimeline>",
+            r#"<S d="90000"/><S t="90000"/>"#,
+            "</SegmentTimeline></SegmentTemplate></Period>",
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::MissingAttribute));
+        assert_eq!(
+            error.path,
+            "MPD > Period[0] > SegmentTemplate > SegmentTimeline > S[1] @ d"
+        );
+    }
+
+    #[test]
+    fn fixed_width_integer_attributes_reject_unrepresentable_values() {
+        let template = |attribute: &str| {
+            format!(
+                concat!(
+                    r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+                    r#"minBufferTime="PT2S"><Period><SegmentBase {}/></Period></MPD>"#,
+                ),
+                attribute
+            )
+        };
+        let mpd = mpd_from_slice(template(r#"eptDelta="-100""#).as_bytes()).unwrap();
+        let segment_base = mpd.periods.first().unwrap().segment_base.as_ref().unwrap();
+        assert_eq!(segment_base.ept_delta, Some(-100));
+
+        let mpd =
+            mpd_from_slice(template(r#"presentationTimeOffset="18446744073709551615""#).as_bytes())
+                .unwrap();
+        let segment_base = mpd.periods.first().unwrap().segment_base.as_ref().unwrap();
+        assert_eq!(segment_base.presentation_time_offset, Some(u64::MAX));
+
+        for attribute in [
+            r#"eptDelta="9223372036854775808""#,
+            r#"presentationTimeOffset="18446744073709551616""#,
+            r#"presentationTimeOffset="-1""#,
+        ] {
+            let error = mpd_from_slice(template(attribute).as_bytes()).unwrap_err();
+            assert!(matches!(error.kind, ErrorKind::InvalidValue { .. }));
+        }
+    }
+
+    #[test]
+    fn malformed_byte_ranges_are_rejected() {
+        for range in ["abc", "1-2-3", "1_2"] {
+            let input = format!(
+                concat!(
+                    r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" "#,
+                    r#"minBufferTime="PT2S"><Period><SegmentBase indexRange="{}"/></Period></MPD>"#,
+                ),
+                range
+            );
+            let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+            assert!(matches!(error.kind, ErrorKind::InvalidValue { .. }));
+            assert_eq!(error.path, "MPD > Period[0] > SegmentBase @ indexRange");
+        }
     }
 
     #[test]
