@@ -7,3 +7,4 @@
 - [0005](./0005-no-serde.md) — **serde 不採用** (accepted): `xs:extension` 継承と未知ノード保持が serde のデータモデルと合わず、自前のイベントベース変換を手書きする。
 - [0006](./0006-handwritten-model-no-xsd-codegen.md) — **XSD 自動生成せず手書きモデル1層** (accepted): 60〜80 型は一度きりの投資、乖離事故は CI の XSD バリデーションが安全網。
 - [0007](./0007-quick-xml-behind-internal-seam.md) — **quick-xml は内部の継ぎ目に隠す** (accepted): 自前 Event enum は `pub(crate)`、公開 API は構造体レベル（読み `&[u8]` / 書き `io::Write`）のみ。
+- [0008](./0008-fixed-width-value-space-rejects-unrepresentable.md) — **属性値は固定幅の値空間に写像し、表現不能な値は拒否** (accepted): 黙った精度損失は意味論的等価と両立しないため fail-fast で拒否。小数秒の無損失な末尾ゼロのみ例外的に受理。

@@ -34,6 +34,10 @@ fn parse_unsigned_digits(text: &str) -> Option<u32> {
 /// `1Y = 12M` and `1D = 24H = 1440M = 86400S` are applied), so `PT2M` and
 /// `PT120S` compare equal. [`fmt::Display`] produces the canonical form.
 ///
+/// Fractional seconds are held at nanosecond precision. Digits beyond the
+/// ninth are accepted only when they are all zero (no information is lost);
+/// anything finer is rejected rather than silently rounded (ADR-0008).
+///
 /// ```
 /// use mpd_schema::model::types::XsDuration;
 ///
@@ -119,13 +123,15 @@ impl FromStr for XsDuration {
                 let mut value: u32 = 0;
                 let mut digit_count: u32 = 0;
                 while let Some(digit) = characters.peek().and_then(|c| c.to_digit(10)) {
-                    if digit_count == 9 {
+                    if digit_count < 9 {
+                        value = value
+                            .checked_mul(10)
+                            .and_then(|v| v.checked_add(digit))
+                            .ok_or_else(invalid)?;
+                    } else if digit != 0 {
+                        // 10桁目以降は情報落ちのないゼロのみ受理する（ADR-0008）
                         return Err(invalid());
                     }
-                    value = value
-                        .checked_mul(10)
-                        .and_then(|v| v.checked_add(digit))
-                        .ok_or_else(invalid)?;
                     digit_count = digit_count.checked_add(1).ok_or_else(invalid)?;
                     characters.next();
                 }
@@ -133,7 +139,7 @@ impl FromStr for XsDuration {
                     return Err(invalid());
                 }
                 let scale = 9u32
-                    .checked_sub(digit_count)
+                    .checked_sub(digit_count.min(9))
                     .and_then(|exponent| 10u32.checked_pow(exponent))
                     .ok_or_else(invalid)?;
                 fraction = Some(value.checked_mul(scale).ok_or_else(invalid)?);
@@ -444,6 +450,12 @@ mod tests {
     }
 
     #[test]
+    fn duration_accepts_lossless_fraction_digits_beyond_nanoseconds() {
+        assert_eq!(duration("PT1.5000000000S"), duration("PT1.5S"));
+        assert_eq!(duration("PT1.000000000000S"), duration("PT1S"));
+    }
+
+    #[test]
     fn duration_parses_negative_values() {
         let parsed = duration("-P1DT2H");
         assert!(parsed.negative);
@@ -490,6 +502,7 @@ mod tests {
             "PT1Sx",
             "P1DT",
             "PT1.1234567891S",
+            "PT1.0000000005S",
             "P99999999999999999999Y",
             " PT1S",
             "pt1s",

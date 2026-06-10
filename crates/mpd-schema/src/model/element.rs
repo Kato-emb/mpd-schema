@@ -17,7 +17,11 @@ pub struct Element {
     ///
     /// Read-only convenience for consumers (for example DRM scheme
     /// detection); serialization ignores it and writes the lexical
-    /// [`Element::name`].
+    /// [`Element::name`]. Setting or mutating this field therefore has no
+    /// effect on output: code that builds unknown nodes by hand is
+    /// responsible for keeping the prefix in [`Element::name`] and the
+    /// `xmlns:*` declarations in [`Element::attributes`] consistent
+    /// (ADR-0003).
     pub namespace: Option<String>,
     /// Attributes as written, in document order, including `xmlns:*`
     /// declarations.
