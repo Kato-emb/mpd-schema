@@ -12,7 +12,7 @@
 ├── crates/
 │   └── mpd-schema/         # 本体。将来、解決クレート（命名は着手時に決定。候補: mpd-resolve）が並ぶ
 ├── scripts/
-│   └── fetch-fixtures.sh   # DASHSchema 5th-Ed-Final を sha256 固定で取得（ADR-0004）
+│   └── fetch-fixtures.sh   # DASHSchema 5th-Ed を sha256 固定で取得（ADR-0004）
 ├── fixtures/               # gitignore。fetch スクリプトの展開先 + 私有 MPD コーパス
 └── docs/
 ```
@@ -148,6 +148,6 @@ pub struct Error {
 
 ## 対象スキーマとバージョン運用
 
-- モデル化対象は DASHSchema `5th-Ed-Final` タグ（ISO/IEC 23009-1:2022、最新の出版済み edition）。6th edition は出版後に乗り換え、「最新 edition 一本」を維持。それまでの 6th-ed 要素は未知ノード受け皿が拾う
-- 初版 0.1.0。1.0 の条件: (1) 5th-Ed-Final の complexType 全カバー、(2) 公開 fixtures の roundtrip green、(3) 実コーパス由来の「required → `Option` 緩和」が一巡していること。緩和は `new()` のシグネチャ変更 = breaking なので、0.x のうちに使い切る
+- モデル化対象は DASHSchema `5th-Ed` タグ（ISO/IEC 23009-1:2022、最新の出版済み edition）。6th edition は出版後に乗り換え、「最新 edition 一本」を維持。それまでの 6th-ed 要素は未知ノード受け皿が拾う
+- 初版 0.1.0。1.0 の条件: (1) 5th-Ed の complexType 全カバー、(2) 公開 fixtures の roundtrip green、(3) 実コーパス由来の「required → `Option` 緩和」が一巡していること。緩和は `new()` のシグネチャ変更 = breaking なので、0.x のうちに使い切る
 - crates.io 名 `mpd-schema` は確保可能（2026-06-10 確認）。ライセンス MIT OR Apache-2.0。fixtures は package に含めない

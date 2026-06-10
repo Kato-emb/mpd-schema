@@ -3,7 +3,7 @@ status: accepted
 date: 2026-06-10
 decision-makers: r-kato
 ---
-# DASHSchema 由来ファイルは同梱せず、fetch スクリプトで実行時に取得（5th-Ed-Final にピン）
+# DASHSchema 由来ファイルは同梱せず、fetch スクリプトで実行時に取得（5th-Ed にピン）
 
 ## Context and Problem Statement
 
@@ -17,12 +17,12 @@ decision-makers: r-kato
 
 ## Considered Options
 
-* ピン先: `5th-Ed-Final` タグ / `6th-Ed` ブランチ追従
+* ピン先: `5th-Ed` タグ / `6th-Ed` ブランチ追従
 * 取得方式: git submodule / fetch スクリプト / リポジトリ同梱
 
 ## Decision Outcome
 
-* **ピン先: `5th-Ed-Final` タグ**（最新の出版済み標準 = ISO/IEC 23009-1:2022）。6th edition 出版時に乗り換え、「最新 edition 一本」原則を維持。それまでの 6th-ed 要素は未知ノード受け皿が拾う。
+* **ピン先: `5th-Ed` タグ**（最新の出版済み標準 = ISO/IEC 23009-1:2022）。6th edition 出版時に乗り換え、「最新 edition 一本」原則を維持。それまでの 6th-ed 要素は未知ノード受け皿が拾う。
 * **取得方式: `scripts/fetch-fixtures.sh`**。タグの tarball を sha256 固定でダウンロードし、gitignore ディレクトリへ展開。fixtures 必須のテストは未取得時に fetch スクリプトの実行を促して fail する。CI は fetch ステップ + キャッシュ。
 
 submodule を退けた決め手は機構の数: DASH-IF テストベクタでスクリプトの存在は避けられず、submodule 併用は fixtures 取得の2機構並走になる。タグ tarball + sha256 で再現性は submodule（git SHA）と同等。

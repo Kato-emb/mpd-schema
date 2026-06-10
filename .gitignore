@@ -1,1 +1,3 @@
 /target
+# 再配布不可の DASHSchema と私有 MPD コーパス置き場（scripts/fetch-fixtures.sh で取得、ADR-0004）
+/fixtures
