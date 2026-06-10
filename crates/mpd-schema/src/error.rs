@@ -71,6 +71,11 @@ pub enum ErrorKind {
         /// A description of the expected form.
         expected: String,
     },
+    /// The document is not UTF-8.
+    ///
+    /// v1 accepts UTF-8 input only: input that is not valid UTF-8, or that
+    /// declares another encoding in its XML declaration, is rejected.
+    Encoding(String),
 }
 
 impl fmt::Display for ErrorKind {
@@ -82,6 +87,7 @@ impl fmt::Display for ErrorKind {
             Self::InvalidValue { value, expected } => {
                 write!(formatter, "invalid value `{value}`, expected {expected}")
             }
+            Self::Encoding(message) => write!(formatter, "unsupported encoding: {message}"),
         }
     }
 }

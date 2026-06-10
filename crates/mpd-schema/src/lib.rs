@@ -10,5 +10,15 @@
     )
 )]
 
+#[allow(
+    dead_code,
+    reason = "ADR-0007 の内部継ぎ目。利用側の de/ser は Phase 4 で実装されるため、それまで lib ビルドでは未使用になる"
+)]
+mod backend;
 pub mod error;
+#[allow(
+    dead_code,
+    reason = "ADR-0007 の内部継ぎ目。利用側の de/ser は Phase 4 で実装されるため、それまで lib ビルドでは未使用になる"
+)]
+mod event;
 pub mod model;
