@@ -86,11 +86,40 @@ fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
     push_unknown_attributes(&mut attributes, &mpd.unknown_attributes);
 
     start_element(writer, "MPD", attributes)?;
+    for pi in &mpd.program_informations {
+        emit_program_information(writer, pi)?;
+    }
+    for base_url in &mpd.base_urls {
+        emit_base_url(writer, base_url)?;
+    }
+    for location in &mpd.locations {
+        start_element(writer, "Location", Vec::new())?;
+        writer.write_event(&Event::Text(location.clone()))?;
+        writer.write_event(&Event::End)?;
+    }
+    for patch_loc in &mpd.patch_locations {
+        emit_patch_location(writer, patch_loc)?;
+    }
+    for sd in &mpd.service_descriptions {
+        emit_service_description(writer, sd)?;
+    }
+    for init_set in &mpd.initialization_sets {
+        emit_initialization_set(writer, init_set)?;
+    }
+    for init_group in &mpd.initialization_groups {
+        emit_uint_v_with_id(writer, "InitializationGroup", init_group)?;
+    }
+    for init_pres in &mpd.initialization_presentations {
+        emit_uint_v_with_id(writer, "InitializationPresentation", init_pres)?;
+    }
     for cp in &mpd.content_protections {
         emit_content_protection(writer, cp)?;
     }
     for period in &mpd.periods {
         emit_period(writer, period)?;
+    }
+    for metrics in &mpd.metrics {
+        emit_metrics(writer, metrics)?;
     }
     for desc in &mpd.essential_properties {
         emit_descriptor(writer, desc, "EssentialProperty")?;
@@ -100,6 +129,9 @@ fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
     }
     for desc in &mpd.utc_timings {
         emit_descriptor(writer, desc, "UTCTiming")?;
+    }
+    if let Some(leap_sec) = &mpd.leap_second_information {
+        emit_leap_second_information(writer, leap_sec)?;
     }
     emit_unknown_children(writer, &mpd.unknown_children)?;
     writer.write_event(&Event::End)
@@ -118,6 +150,9 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
     push_unknown_attributes(&mut attributes, &period.unknown_attributes);
 
     start_element(writer, "Period", attributes)?;
+    for base_url in &period.base_urls {
+        emit_base_url(writer, base_url)?;
+    }
     emit_segment_children(
         writer,
         period.segment_base.as_ref(),
@@ -126,6 +161,9 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
     )?;
     if let Some(desc) = &period.asset_identifier {
         emit_descriptor(writer, desc, "AssetIdentifier")?;
+    }
+    for sd in &period.service_descriptions {
+        emit_service_description(writer, sd)?;
     }
     for cp in &period.content_protections {
         emit_content_protection(writer, cp)?;
@@ -241,6 +279,9 @@ fn emit_adaptation_set<W: io::Write>(
     for desc in &adaptation_set.viewpoints {
         emit_descriptor(writer, desc, "Viewpoint")?;
     }
+    for base_url in &adaptation_set.base_urls {
+        emit_base_url(writer, base_url)?;
+    }
     emit_segment_children(
         writer,
         adaptation_set.segment_base.as_ref(),
@@ -291,6 +332,9 @@ fn emit_representation<W: io::Write>(
 
     start_element(writer, "Representation", attributes)?;
     emit_representation_base_children(writer, &representation.base)?;
+    for base_url in &representation.base_urls {
+        emit_base_url(writer, base_url)?;
+    }
     emit_segment_children(
         writer,
         representation.segment_base.as_ref(),
@@ -324,6 +368,318 @@ fn emit_representation_base_children<W: io::Write>(
         emit_descriptor(writer, desc, "SupplementalProperty")?;
     }
     Ok(())
+}
+
+fn emit_program_information<W: io::Write>(
+    writer: &mut Writer<W>,
+    pi: &crate::model::ProgramInformation,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "lang", pi.lang.as_ref());
+    push_optional(
+        &mut attributes,
+        "moreInformationURL",
+        pi.more_information_url.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &pi.unknown_attributes);
+    start_element(writer, "ProgramInformation", attributes)?;
+    if let Some(title) = &pi.title {
+        start_element(writer, "Title", Vec::new())?;
+        writer.write_event(&Event::Text(title.clone()))?;
+        writer.write_event(&Event::End)?;
+    }
+    if let Some(source) = &pi.source {
+        start_element(writer, "Source", Vec::new())?;
+        writer.write_event(&Event::Text(source.clone()))?;
+        writer.write_event(&Event::End)?;
+    }
+    if let Some(copyright) = &pi.copyright {
+        start_element(writer, "Copyright", Vec::new())?;
+        writer.write_event(&Event::Text(copyright.clone()))?;
+        writer.write_event(&Event::End)?;
+    }
+    emit_unknown_children(writer, &pi.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_base_url<W: io::Write>(
+    writer: &mut Writer<W>,
+    base_url: &crate::model::BaseUrl,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(
+        &mut attributes,
+        "serviceLocation",
+        base_url.service_location.as_ref(),
+    );
+    push_optional(&mut attributes, "byteRange", base_url.byte_range.as_ref());
+    push_optional(
+        &mut attributes,
+        "availabilityTimeOffset",
+        base_url.availability_time_offset.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "availabilityTimeComplete",
+        base_url.availability_time_complete.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "timeShiftBufferDepth",
+        base_url.time_shift_buffer_depth.as_ref(),
+    );
+    if base_url.range_access {
+        push_attribute(&mut attributes, "rangeAccess", "true");
+    }
+    push_unknown_attributes(&mut attributes, &base_url.unknown_attributes);
+    start_element(writer, "BaseURL", attributes)?;
+    writer.write_event(&Event::Text(base_url.url.clone()))?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_patch_location<W: io::Write>(
+    writer: &mut Writer<W>,
+    patch: &crate::model::PatchLocation,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "ttl", patch.ttl.as_ref());
+    push_unknown_attributes(&mut attributes, &patch.unknown_attributes);
+    start_element(writer, "PatchLocation", attributes)?;
+    writer.write_event(&Event::Text(patch.url.clone()))?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_service_description<W: io::Write>(
+    writer: &mut Writer<W>,
+    sd: &crate::model::ServiceDescription,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "id", sd.id.as_ref());
+    push_unknown_attributes(&mut attributes, &sd.unknown_attributes);
+    start_element(writer, "ServiceDescription", attributes)?;
+    for scope in &sd.scopes {
+        emit_descriptor(writer, scope, "Scope")?;
+    }
+    for latency in &sd.latencies {
+        emit_latency(writer, latency)?;
+    }
+    for rate in &sd.playback_rates {
+        emit_playback_rate(writer, rate)?;
+    }
+    for quality in &sd.operating_qualities {
+        emit_operating_quality(writer, quality)?;
+    }
+    for bandwidth in &sd.operating_bandwidths {
+        emit_operating_bandwidth(writer, bandwidth)?;
+    }
+    emit_unknown_children(writer, &sd.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_latency<W: io::Write>(
+    writer: &mut Writer<W>,
+    latency: &crate::model::Latency,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(
+        &mut attributes,
+        "referenceId",
+        latency.reference_id.as_ref(),
+    );
+    push_optional(&mut attributes, "target", latency.target.as_ref());
+    push_optional(&mut attributes, "max", latency.max.as_ref());
+    push_optional(&mut attributes, "min", latency.min.as_ref());
+    push_unknown_attributes(&mut attributes, &latency.unknown_attributes);
+    start_element(writer, "Latency", attributes)?;
+    for quality_latency in &latency.quality_latencies {
+        emit_uint_pairs_with_id(writer, quality_latency)?;
+    }
+    emit_unknown_children(writer, &latency.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_playback_rate<W: io::Write>(
+    writer: &mut Writer<W>,
+    rate: &crate::model::PlaybackRate,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "min", rate.min.as_ref());
+    push_optional(&mut attributes, "max", rate.max.as_ref());
+    push_unknown_attributes(&mut attributes, &rate.unknown_attributes);
+    start_element(writer, "PlaybackRate", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_operating_quality<W: io::Write>(
+    writer: &mut Writer<W>,
+    quality: &crate::model::OperatingQuality,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "mediaType", quality.media_type);
+    push_optional(&mut attributes, "min", quality.min.as_ref());
+    push_optional(&mut attributes, "max", quality.max.as_ref());
+    push_optional(&mut attributes, "target", quality.target.as_ref());
+    push_optional(&mut attributes, "type", quality.quality_type.as_ref());
+    push_optional(
+        &mut attributes,
+        "maxDifference",
+        quality.max_difference.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &quality.unknown_attributes);
+    start_element(writer, "OperatingQuality", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_operating_bandwidth<W: io::Write>(
+    writer: &mut Writer<W>,
+    bw: &crate::model::OperatingBandwidth,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "mediaType", bw.media_type);
+    push_optional(&mut attributes, "min", bw.min.as_ref());
+    push_optional(&mut attributes, "max", bw.max.as_ref());
+    push_optional(&mut attributes, "target", bw.target.as_ref());
+    push_unknown_attributes(&mut attributes, &bw.unknown_attributes);
+    start_element(writer, "OperatingBandwidth", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_uint_pairs_with_id<W: io::Write>(
+    writer: &mut Writer<W>,
+    pairs: &crate::model::UIntPairsWithId,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "type", pairs.value_type.as_ref());
+    push_unknown_attributes(&mut attributes, &pairs.unknown_attributes);
+    start_element(writer, "QualityLatency", attributes)?;
+    let pairs_str = pairs
+        .pairs
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    writer.write_event(&Event::Text(pairs_str))?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_uint_v_with_id<W: io::Write>(
+    writer: &mut Writer<W>,
+    tag: &str,
+    v: &crate::model::UIntVWithId,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "id", v.id);
+    push_optional(&mut attributes, "profiles", v.profiles.as_ref());
+    push_optional(&mut attributes, "contentType", v.content_type.as_ref());
+    push_unknown_attributes(&mut attributes, &v.unknown_attributes);
+    start_element(writer, tag, attributes)?;
+    let values_str = v
+        .values
+        .iter()
+        .map(|val| val.to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    writer.write_event(&Event::Text(values_str))?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_metrics<W: io::Write>(
+    writer: &mut Writer<W>,
+    metrics: &crate::model::Metrics,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "metrics", &metrics.metrics);
+    push_unknown_attributes(&mut attributes, &metrics.unknown_attributes);
+    start_element(writer, "Metrics", attributes)?;
+    for range in &metrics.ranges {
+        emit_range(writer, range)?;
+    }
+    for reporting in &metrics.reportings {
+        emit_descriptor(writer, reporting, "Reporting")?;
+    }
+    emit_unknown_children(writer, &metrics.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_range<W: io::Write>(writer: &mut Writer<W>, range: &crate::model::Range) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "starttime", range.starttime.as_ref());
+    push_optional(&mut attributes, "duration", range.duration.as_ref());
+    push_unknown_attributes(&mut attributes, &range.unknown_attributes);
+    start_element(writer, "Range", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_initialization_set<W: io::Write>(
+    writer: &mut Writer<W>,
+    init_set: &crate::model::InitializationSet,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_representation_base_attributes(&mut attributes, &init_set.base);
+    push_attribute(&mut attributes, "id", init_set.id);
+    if !init_set.in_all_periods {
+        push_attribute(&mut attributes, "inAllPeriods", "false");
+    }
+    push_optional(
+        &mut attributes,
+        "contentType",
+        init_set.content_type.as_ref(),
+    );
+    push_optional(&mut attributes, "par", init_set.par.as_ref());
+    push_optional(&mut attributes, "maxWidth", init_set.max_width.as_ref());
+    push_optional(&mut attributes, "maxHeight", init_set.max_height.as_ref());
+    push_optional(
+        &mut attributes,
+        "maxFrameRate",
+        init_set.max_frame_rate.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "initialization",
+        init_set.initialization.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &init_set.base.unknown_attributes);
+    start_element(writer, "InitializationSet", attributes)?;
+    for accessibility in &init_set.accessibilities {
+        emit_descriptor(writer, accessibility, "Accessibility")?;
+    }
+    for role in &init_set.roles {
+        emit_descriptor(writer, role, "Role")?;
+    }
+    for rating in &init_set.ratings {
+        emit_descriptor(writer, rating, "Rating")?;
+    }
+    for viewpoint in &init_set.viewpoints {
+        emit_descriptor(writer, viewpoint, "Viewpoint")?;
+    }
+    emit_unknown_children(writer, &init_set.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_leap_second_information<W: io::Write>(
+    writer: &mut Writer<W>,
+    leap_sec: &crate::model::LeapSecondInformation,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(
+        &mut attributes,
+        "availabilityStartLeapOffset",
+        leap_sec.availability_start_leap_offset,
+    );
+    push_optional(
+        &mut attributes,
+        "nextAvailabilityStartLeapOffset",
+        leap_sec.next_availability_start_leap_offset.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "nextLeapChangeTime",
+        leap_sec.next_leap_change_time.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &leap_sec.unknown_attributes);
+    start_element(writer, "LeapSecondInformation", attributes)?;
+    emit_unknown_children(writer, &leap_sec.unknown_children)?;
+    writer.write_event(&Event::End)
 }
 
 fn emit_segment_children<W: io::Write>(
@@ -829,7 +1185,7 @@ mod tests {
             r#"xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" "#,
             r#"xsi:schemaLocation="urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd" "#,
             r#"profiles="p" minBufferTime="PT2S">"#,
-            "<ProgramInformation><Title>demo</Title></ProgramInformation>",
+            "<FutureExtension><Detail>demo</Detail></FutureExtension>",
             "<Period>",
             r#"<AdaptationSet mimeType="video/mp4">"#,
             r#"<ContentProtection xmlns:cenc="urn:mpeg:cenc:2013" "#,
@@ -845,9 +1201,9 @@ mod tests {
         let output = serialize(&mpd);
 
         let period_position = output.find("<Period").unwrap();
-        let program_information_position = output.find("<ProgramInformation").unwrap();
+        let future_extension_position = output.find("<FutureExtension").unwrap();
         assert!(
-            period_position < program_information_position,
+            period_position < future_extension_position,
             "unknown children must follow known children: {output}"
         );
         let representation_position = output.find("<Representation").unwrap();

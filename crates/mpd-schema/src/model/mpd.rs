@@ -15,6 +15,7 @@ use crate::error::Error;
 use crate::model::descriptor::{ContentProtection, Descriptor};
 use crate::model::element::Element;
 use crate::model::segment::{SegmentBase, SegmentList, SegmentTemplate};
+use crate::model::service_description::{ServiceDescription, UIntVWithId};
 use crate::model::types::{
     AudioSamplingRate, FrameRate, Ratio, Sap, XsDateTime, XsDuration, invalid_value,
 };
@@ -53,17 +54,37 @@ pub struct Mpd {
     pub max_segment_duration: Option<XsDuration>,
     /// The `maxSubsegmentDuration` attribute.
     pub max_subsegment_duration: Option<XsDuration>,
+    /// The `ProgramInformation` children.
+    pub program_informations: Vec<ProgramInformation>,
+    /// The `BaseURL` children.
+    pub base_urls: Vec<BaseUrl>,
+    /// The `Location` children (plain strings).
+    pub locations: Vec<String>,
+    /// The `PatchLocation` children.
+    pub patch_locations: Vec<PatchLocation>,
+    /// The `ServiceDescription` children.
+    pub service_descriptions: Vec<ServiceDescription>,
+    /// The `InitializationSet` children.
+    pub initialization_sets: Vec<InitializationSet>,
+    /// The `InitializationGroup` children.
+    pub initialization_groups: Vec<UIntVWithId>,
+    /// The `InitializationPresentation` children.
+    pub initialization_presentations: Vec<UIntVWithId>,
     /// The `ContentProtection` children.
     pub content_protections: Vec<ContentProtection>,
     /// The `Period` children. The schema requires at least one; occurrence
     /// counts are not enforced by parsing.
     pub periods: Vec<Period>,
+    /// The `Metrics` children.
+    pub metrics: Vec<Metrics>,
     /// The `EssentialProperty` children.
     pub essential_properties: Vec<Descriptor>,
     /// The `SupplementalProperty` children.
     pub supplemental_properties: Vec<Descriptor>,
     /// The `UTCTiming` children.
     pub utc_timings: Vec<Descriptor>,
+    /// The `LeapSecondInformation` child.
+    pub leap_second_information: Option<LeapSecondInformation>,
     /// Attributes without a typed field, as written, including `xmlns:*`
     /// declarations. The default `xmlns` declaration is not kept: parsing
     /// drops it and serialization re-adds [`MPD_NAMESPACE`] on the root.
@@ -91,11 +112,21 @@ impl Mpd {
             suggested_presentation_delay: None,
             max_segment_duration: None,
             max_subsegment_duration: None,
+            program_informations: Vec::new(),
+            base_urls: Vec::new(),
+            locations: Vec::new(),
+            patch_locations: Vec::new(),
+            service_descriptions: Vec::new(),
+            initialization_sets: Vec::new(),
+            initialization_groups: Vec::new(),
+            initialization_presentations: Vec::new(),
             content_protections: Vec::new(),
             periods: Vec::new(),
+            metrics: Vec::new(),
             essential_properties: Vec::new(),
             supplemental_properties: Vec::new(),
             utc_timings: Vec::new(),
+            leap_second_information: None,
             unknown_attributes: Vec::new(),
             unknown_children: Vec::new(),
         }
@@ -148,6 +179,8 @@ pub struct Period {
     pub duration: Option<XsDuration>,
     /// The `bitstreamSwitching` attribute.
     pub bitstream_switching: Option<bool>,
+    /// The `BaseURL` children.
+    pub base_urls: Vec<BaseUrl>,
     /// The `SegmentBase` child.
     pub segment_base: Option<SegmentBase>,
     /// The `SegmentList` child.
@@ -156,6 +189,8 @@ pub struct Period {
     pub segment_template: Option<SegmentTemplate>,
     /// The `AssetIdentifier` child.
     pub asset_identifier: Option<Descriptor>,
+    /// The `ServiceDescription` children.
+    pub service_descriptions: Vec<ServiceDescription>,
     /// The `ContentProtection` children.
     pub content_protections: Vec<ContentProtection>,
     /// The `AdaptationSet` children.
@@ -177,10 +212,12 @@ impl Period {
             start: None,
             duration: None,
             bitstream_switching: None,
+            base_urls: Vec::new(),
             segment_base: None,
             segment_list: None,
             segment_template: None,
             asset_identifier: None,
+            service_descriptions: Vec::new(),
             content_protections: Vec::new(),
             adaptation_sets: Vec::new(),
             supplemental_properties: Vec::new(),
@@ -357,6 +394,8 @@ pub struct AdaptationSet {
     pub ratings: Vec<Descriptor>,
     /// The `Viewpoint` children.
     pub viewpoints: Vec<Descriptor>,
+    /// The `BaseURL` children.
+    pub base_urls: Vec<BaseUrl>,
     /// The `SegmentBase` child.
     pub segment_base: Option<SegmentBase>,
     /// The `SegmentList` child.
@@ -457,6 +496,8 @@ pub struct Representation {
     /// The `mediaStreamStructureId` attribute, split on whitespace. Empty
     /// means absent.
     pub media_stream_structure_id: Vec<String>,
+    /// The `BaseURL` children.
+    pub base_urls: Vec<BaseUrl>,
     /// The `SegmentBase` child.
     pub segment_base: Option<SegmentBase>,
     /// The `SegmentList` child.
@@ -478,6 +519,7 @@ impl Representation {
             association_id: Vec::new(),
             association_type: Vec::new(),
             media_stream_structure_id: Vec::new(),
+            base_urls: Vec::new(),
             segment_base: None,
             segment_list: None,
             segment_template: None,
@@ -545,5 +587,234 @@ mod tests {
             assert_eq!(value.to_string(), lexical);
         }
         assert!("Progressive".parse::<VideoScan>().is_err());
+    }
+}
+
+/// A `BaseURL` element with simple content (XSD `BaseURLType`).
+///
+/// Represents a URI with optional attributes for availability timing and
+/// byte range information.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct BaseUrl {
+    /// The URI text content.
+    pub url: String,
+    /// The `serviceLocation` attribute.
+    pub service_location: Option<String>,
+    /// The `byteRange` attribute.
+    pub byte_range: Option<String>,
+    /// The `availabilityTimeOffset` attribute.
+    pub availability_time_offset: Option<f64>,
+    /// The `availabilityTimeComplete` attribute.
+    pub availability_time_complete: Option<bool>,
+    /// The `timeShiftBufferDepth` attribute.
+    pub time_shift_buffer_depth: Option<XsDuration>,
+    /// The `rangeAccess` attribute, defaulting to `false`.
+    pub range_access: bool,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+}
+
+impl BaseUrl {
+    /// Creates a `BaseURL` with the text content; other fields start empty.
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            service_location: None,
+            byte_range: None,
+            availability_time_offset: None,
+            availability_time_complete: None,
+            time_shift_buffer_depth: None,
+            range_access: false,
+            unknown_attributes: Vec::new(),
+        }
+    }
+}
+
+/// A `ProgramInformation` element (XSD `ProgramInformationType`).
+#[derive(Debug, Clone, PartialEq, Default)]
+#[non_exhaustive]
+pub struct ProgramInformation {
+    /// The `lang` attribute.
+    pub lang: Option<String>,
+    /// The `moreInformationURL` attribute.
+    pub more_information_url: Option<String>,
+    /// The `Title` child element.
+    pub title: Option<String>,
+    /// The `Source` child element.
+    pub source: Option<String>,
+    /// The `Copyright` child element.
+    pub copyright: Option<String>,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+    /// Child elements without a typed field, re-serialized after the known
+    /// children with their relative order preserved.
+    pub unknown_children: Vec<Element>,
+}
+
+impl ProgramInformation {
+    /// Creates an empty program information; the schema requires no attribute.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// A `PatchLocation` element with simple content (XSD `PatchLocationType`).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct PatchLocation {
+    /// The URI text content.
+    pub url: String,
+    /// The `ttl` attribute.
+    pub ttl: Option<f64>,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+}
+
+impl PatchLocation {
+    /// Creates a `PatchLocation` with the text content; other fields start empty.
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            ttl: None,
+            unknown_attributes: Vec::new(),
+        }
+    }
+}
+
+/// A `Range` element for `Metrics` (XSD `RangeType`).
+#[derive(Debug, Clone, PartialEq, Default)]
+#[non_exhaustive]
+pub struct Range {
+    /// The `starttime` attribute.
+    pub starttime: Option<XsDuration>,
+    /// The `duration` attribute.
+    pub duration: Option<XsDuration>,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+}
+
+impl Range {
+    /// Creates an empty range; the schema requires no attribute.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// A `Metrics` element (XSD `MetricsType`).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct Metrics {
+    /// The required `metrics` attribute.
+    pub metrics: String,
+    /// The `Range` child elements.
+    pub ranges: Vec<Range>,
+    /// The `Reporting` child elements (Descriptors).
+    pub reportings: Vec<Descriptor>,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+    /// Child elements without a typed field, re-serialized after the known
+    /// children with their relative order preserved.
+    pub unknown_children: Vec<Element>,
+}
+
+impl Metrics {
+    /// Creates a `Metrics` with the required attribute; other fields start empty.
+    pub fn new(metrics: impl Into<String>) -> Self {
+        Self {
+            metrics: metrics.into(),
+            ranges: Vec::new(),
+            reportings: Vec::new(),
+            unknown_attributes: Vec::new(),
+            unknown_children: Vec::new(),
+        }
+    }
+}
+
+/// An `InitializationSet` element (XSD `InitializationSetType`).
+///
+/// Extends `RepresentationBaseType` with additional descriptor children.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct InitializationSet {
+    /// The embedded `RepresentationBaseType` part, which also carries the
+    /// catch-all fields for unknown content.
+    pub base: RepresentationBase,
+    /// The required `id` attribute.
+    pub id: u32,
+    /// The `inAllPeriods` attribute, defaulting to `true`.
+    pub in_all_periods: bool,
+    /// The `contentType` attribute.
+    pub content_type: Option<ContentType>,
+    /// The `par` attribute.
+    pub par: Option<Ratio>,
+    /// The `maxWidth` attribute.
+    pub max_width: Option<u32>,
+    /// The `maxHeight` attribute.
+    pub max_height: Option<u32>,
+    /// The `maxFrameRate` attribute.
+    pub max_frame_rate: Option<FrameRate>,
+    /// The `initialization` attribute.
+    pub initialization: Option<String>,
+    /// The `Accessibility` child elements (Descriptors).
+    pub accessibilities: Vec<Descriptor>,
+    /// The `Role` child elements (Descriptors).
+    pub roles: Vec<Descriptor>,
+    /// The `Rating` child elements (Descriptors).
+    pub ratings: Vec<Descriptor>,
+    /// The `Viewpoint` child elements (Descriptors).
+    pub viewpoints: Vec<Descriptor>,
+}
+
+impl InitializationSet {
+    /// Creates an `InitializationSet` with the required `id` attribute; other
+    /// fields start empty.
+    pub fn new(id: u32) -> Self {
+        Self {
+            base: RepresentationBase::new(),
+            id,
+            in_all_periods: true,
+            content_type: None,
+            par: None,
+            max_width: None,
+            max_height: None,
+            max_frame_rate: None,
+            initialization: None,
+            accessibilities: Vec::new(),
+            roles: Vec::new(),
+            ratings: Vec::new(),
+            viewpoints: Vec::new(),
+        }
+    }
+}
+
+/// A `LeapSecondInformation` element (XSD `LeapSecondInformationType`).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct LeapSecondInformation {
+    /// The required `availabilityStartLeapOffset` attribute.
+    pub availability_start_leap_offset: i64,
+    /// The `nextAvailabilityStartLeapOffset` attribute.
+    pub next_availability_start_leap_offset: Option<i64>,
+    /// The `nextLeapChangeTime` attribute.
+    pub next_leap_change_time: Option<XsDateTime>,
+    /// Attributes without a typed field, as written.
+    pub unknown_attributes: Vec<(String, String)>,
+    /// Child elements without a typed field, re-serialized after the known
+    /// children with their relative order preserved.
+    pub unknown_children: Vec<Element>,
+}
+
+impl LeapSecondInformation {
+    /// Creates a `LeapSecondInformation` with the required attribute; other
+    /// fields start empty.
+    pub fn new(availability_start_leap_offset: i64) -> Self {
+        Self {
+            availability_start_leap_offset,
+            next_availability_start_leap_offset: None,
+            next_leap_change_time: None,
+            unknown_attributes: Vec::new(),
+            unknown_children: Vec::new(),
+        }
     }
 }

@@ -180,7 +180,32 @@ impl Deserializer<'_> {
         mpd.unknown_attributes = unknown_attributes;
 
         while let Some(child) = self.next_content_event()? {
-            if child.matches(MPD_NAMESPACE, "ContentProtection") {
+            if child.matches(MPD_NAMESPACE, "ProgramInformation") {
+                let program_information = self.parse_program_information(child)?;
+                mpd.program_informations.push(program_information);
+            } else if child.matches(MPD_NAMESPACE, "BaseURL") {
+                let base_url = self.parse_base_url(child)?;
+                mpd.base_urls.push(base_url);
+            } else if child.matches(MPD_NAMESPACE, "Location") {
+                let location = self.parse_text_content()?;
+                mpd.locations.push(location);
+            } else if child.matches(MPD_NAMESPACE, "PatchLocation") {
+                let patch_location = self.parse_patch_location(child)?;
+                mpd.patch_locations.push(patch_location);
+            } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
+                let service_description = self.parse_service_description(child)?;
+                mpd.service_descriptions.push(service_description);
+            } else if child.matches(MPD_NAMESPACE, "InitializationSet") {
+                let initialization_set = self.parse_initialization_set(child)?;
+                mpd.initialization_sets.push(initialization_set);
+            } else if child.matches(MPD_NAMESPACE, "InitializationGroup") {
+                let initialization_group = self.parse_uint_v_with_id(child)?;
+                mpd.initialization_groups.push(initialization_group);
+            } else if child.matches(MPD_NAMESPACE, "InitializationPresentation") {
+                let initialization_presentation = self.parse_uint_v_with_id(child)?;
+                mpd.initialization_presentations
+                    .push(initialization_presentation);
+            } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
                 self.path.push(PathSegment {
                     element_name: "ContentProtection",
                     sibling_index: Some(mpd.content_protections.len()),
@@ -196,6 +221,9 @@ impl Deserializer<'_> {
                 let period = self.parse_period(child)?;
                 self.path.pop();
                 mpd.periods.push(period);
+            } else if child.matches(MPD_NAMESPACE, "Metrics") {
+                let metrics = self.parse_metrics(child)?;
+                mpd.metrics.push(metrics);
             } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
                 self.path.push(PathSegment {
                     element_name: "EssentialProperty",
@@ -220,6 +248,9 @@ impl Deserializer<'_> {
                 let desc = self.parse_descriptor(child)?;
                 self.path.pop();
                 mpd.utc_timings.push(desc);
+            } else if child.matches(MPD_NAMESPACE, "LeapSecondInformation") {
+                let leap_second = self.parse_leap_second_information(child)?;
+                mpd.leap_second_information = Some(leap_second);
             } else {
                 mpd.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -252,6 +283,12 @@ impl Deserializer<'_> {
         }
 
         while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "BaseURL") {
+                let base_url = self.parse_base_url(child)?;
+                period.base_urls.push(base_url);
+                continue;
+            }
+
             let Some(child) = self.apply_segment_child(
                 &mut period.segment_base,
                 &mut period.segment_list,
@@ -268,6 +305,9 @@ impl Deserializer<'_> {
                     child,
                     Self::parse_descriptor,
                 )?;
+            } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
+                let service_description = self.parse_service_description(child)?;
+                period.service_descriptions.push(service_description);
             } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
                 self.path.push(PathSegment {
                     element_name: "ContentProtection",
@@ -403,6 +443,12 @@ impl Deserializer<'_> {
         }
 
         while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "BaseURL") {
+                let base_url = self.parse_base_url(child)?;
+                adaptation_set.base_urls.push(base_url);
+                continue;
+            }
+
             let Some(child) = self.apply_segment_child(
                 &mut adaptation_set.segment_base,
                 &mut adaptation_set.segment_list,
@@ -520,6 +566,12 @@ impl Deserializer<'_> {
         representation.media_stream_structure_id = media_stream_structure_id;
 
         while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "BaseURL") {
+                let base_url = self.parse_base_url(child)?;
+                representation.base_urls.push(base_url);
+                continue;
+            }
+
             let Some(child) = self.apply_segment_child(
                 &mut representation.segment_base,
                 &mut representation.segment_list,
@@ -584,6 +636,526 @@ impl Deserializer<'_> {
             }
         }
         Ok(representation)
+    }
+
+    fn parse_program_information(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::ProgramInformation> {
+        use crate::model::ProgramInformation;
+
+        let mut pi = ProgramInformation::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "lang" => pi.lang = Some(attribute.value),
+                "moreInformationURL" => pi.more_information_url = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => pi
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "Title") {
+                pi.title = Some(self.parse_text_content()?);
+            } else if child.matches(MPD_NAMESPACE, "Source") {
+                pi.source = Some(self.parse_text_content()?);
+            } else if child.matches(MPD_NAMESPACE, "Copyright") {
+                pi.copyright = Some(self.parse_text_content()?);
+            } else {
+                pi.unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(pi)
+    }
+
+    fn parse_base_url(&mut self, start: StartElement) -> Result<crate::model::BaseUrl> {
+        use crate::model::BaseUrl;
+
+        let mut base_url = BaseUrl::new("");
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "serviceLocation" => base_url.service_location = Some(attribute.value),
+                "byteRange" => base_url.byte_range = Some(attribute.value),
+                "availabilityTimeOffset" => {
+                    base_url.availability_time_offset = Some(self.in_attribute(
+                        "availabilityTimeOffset",
+                        parse_xs_double(&attribute.value),
+                    )?);
+                }
+                "availabilityTimeComplete" => {
+                    base_url.availability_time_complete = Some(self.in_attribute(
+                        "availabilityTimeComplete",
+                        parse_xs_boolean(&attribute.value),
+                    )?);
+                }
+                "timeShiftBufferDepth" => {
+                    base_url.time_shift_buffer_depth =
+                        Some(self.parse_attribute("timeShiftBufferDepth", &attribute.value)?);
+                }
+                "rangeAccess" => {
+                    base_url.range_access =
+                        self.in_attribute("rangeAccess", parse_xs_boolean(&attribute.value))?;
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => base_url
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        let url = self.parse_text_content()?;
+        base_url.url = url;
+        Ok(base_url)
+    }
+
+    fn parse_patch_location(&mut self, start: StartElement) -> Result<crate::model::PatchLocation> {
+        use crate::model::PatchLocation;
+
+        let mut patch = PatchLocation::new("");
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "ttl" => {
+                    patch.ttl = Some(self.in_attribute("ttl", parse_xs_double(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => patch
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        let url = self.parse_text_content()?;
+        patch.url = url;
+        Ok(patch)
+    }
+
+    fn parse_range(&mut self, start: StartElement) -> Result<crate::model::Range> {
+        use crate::model::Range;
+
+        let mut range = Range::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "starttime" => {
+                    range.starttime = Some(self.parse_attribute("starttime", &attribute.value)?);
+                }
+                "duration" => {
+                    range.duration = Some(self.parse_attribute("duration", &attribute.value)?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => range
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        self.consume_empty_element()?;
+        Ok(range)
+    }
+
+    fn parse_metrics(&mut self, start: StartElement) -> Result<crate::model::Metrics> {
+        use crate::model::Metrics;
+
+        let mut metrics_attr: Option<String> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "metrics" => metrics_attr = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+
+        let mut metrics =
+            Metrics::new(metrics_attr.ok_or_else(|| self.missing_attribute("metrics"))?);
+        metrics.unknown_attributes = unknown_attributes;
+
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "Range") {
+                let range = self.parse_range(child)?;
+                metrics.ranges.push(range);
+            } else if child.matches(MPD_NAMESPACE, "Reporting") {
+                let descriptor = self.parse_descriptor(child)?;
+                metrics.reportings.push(descriptor);
+            } else {
+                metrics
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(metrics)
+    }
+
+    fn parse_leap_second_information(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::LeapSecondInformation> {
+        use crate::model::LeapSecondInformation;
+        use crate::model::types::XsDateTime;
+
+        let mut leap_offset: Option<i64> = None;
+        let mut next_leap_offset: Option<i64> = None;
+        let mut next_leap_time: Option<XsDateTime> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "availabilityStartLeapOffset" => {
+                    leap_offset = Some(self.in_attribute(
+                        "availabilityStartLeapOffset",
+                        parse_xs_integer(&attribute.value),
+                    )?);
+                }
+                "nextAvailabilityStartLeapOffset" => {
+                    next_leap_offset = Some(self.in_attribute(
+                        "nextAvailabilityStartLeapOffset",
+                        parse_xs_integer(&attribute.value),
+                    )?);
+                }
+                "nextLeapChangeTime" => {
+                    next_leap_time =
+                        Some(self.parse_attribute("nextLeapChangeTime", &attribute.value)?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+
+        let mut leap_second = LeapSecondInformation::new(
+            leap_offset.ok_or_else(|| self.missing_attribute("availabilityStartLeapOffset"))?,
+        );
+        leap_second.next_availability_start_leap_offset = next_leap_offset;
+        leap_second.next_leap_change_time = next_leap_time;
+        leap_second.unknown_attributes = unknown_attributes;
+
+        while let Some(child) = self.next_content_event()? {
+            leap_second
+                .unknown_children
+                .push(self.parse_unknown_element(child, 0)?);
+        }
+        Ok(leap_second)
+    }
+
+    fn parse_service_description(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::ServiceDescription> {
+        use crate::model::ServiceDescription;
+
+        let mut service_desc = ServiceDescription::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "id" => {
+                    service_desc.id =
+                        Some(self.in_attribute("id", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => service_desc
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "Scope") {
+                let descriptor = self.parse_descriptor(child)?;
+                service_desc.scopes.push(descriptor);
+            } else if child.matches(MPD_NAMESPACE, "Latency") {
+                let latency = self.parse_latency(child)?;
+                service_desc.latencies.push(latency);
+            } else if child.matches(MPD_NAMESPACE, "PlaybackRate") {
+                let playback_rate = self.parse_playback_rate(child)?;
+                service_desc.playback_rates.push(playback_rate);
+            } else if child.matches(MPD_NAMESPACE, "OperatingQuality") {
+                let quality = self.parse_operating_quality(child)?;
+                service_desc.operating_qualities.push(quality);
+            } else if child.matches(MPD_NAMESPACE, "OperatingBandwidth") {
+                let bandwidth = self.parse_operating_bandwidth(child)?;
+                service_desc.operating_bandwidths.push(bandwidth);
+            } else {
+                service_desc
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(service_desc)
+    }
+
+    fn parse_latency(&mut self, start: StartElement) -> Result<crate::model::Latency> {
+        use crate::model::Latency;
+
+        let mut latency = Latency::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "referenceId" => {
+                    latency.reference_id = Some(
+                        self.in_attribute("referenceId", parse_xs_unsigned_int(&attribute.value))?,
+                    );
+                }
+                "target" => {
+                    latency.target =
+                        Some(self.in_attribute("target", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "max" => {
+                    latency.max =
+                        Some(self.in_attribute("max", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "min" => {
+                    latency.min =
+                        Some(self.in_attribute("min", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => latency
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "QualityLatency") {
+                let quality_latency = self.parse_uint_pairs_with_id(child)?;
+                latency.quality_latencies.push(quality_latency);
+            } else {
+                latency
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(latency)
+    }
+
+    fn parse_playback_rate(&mut self, start: StartElement) -> Result<crate::model::PlaybackRate> {
+        use crate::model::PlaybackRate;
+
+        let mut rate = PlaybackRate::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "max" => {
+                    rate.max = Some(self.in_attribute("max", parse_xs_double(&attribute.value))?);
+                }
+                "min" => {
+                    rate.min = Some(self.in_attribute("min", parse_xs_double(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => rate
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        self.consume_empty_element()?;
+        Ok(rate)
+    }
+
+    fn parse_operating_quality(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::OperatingQuality> {
+        use crate::model::OperatingQuality;
+
+        let mut quality = OperatingQuality::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "mediaType" => {
+                    quality.media_type = self.parse_attribute("mediaType", &attribute.value)?;
+                }
+                "min" => {
+                    quality.min =
+                        Some(self.in_attribute("min", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "max" => {
+                    quality.max =
+                        Some(self.in_attribute("max", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "target" => {
+                    quality.target =
+                        Some(self.in_attribute("target", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "type" => quality.quality_type = Some(attribute.value),
+                "maxDifference" => {
+                    quality.max_difference =
+                        Some(self.in_attribute(
+                            "maxDifference",
+                            parse_xs_unsigned_int(&attribute.value),
+                        )?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => quality
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        self.consume_empty_element()?;
+        Ok(quality)
+    }
+
+    fn parse_operating_bandwidth(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::OperatingBandwidth> {
+        use crate::model::OperatingBandwidth;
+
+        let mut bandwidth = OperatingBandwidth::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "mediaType" => {
+                    bandwidth.media_type = self.parse_attribute("mediaType", &attribute.value)?;
+                }
+                "min" => {
+                    bandwidth.min =
+                        Some(self.in_attribute("min", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "max" => {
+                    bandwidth.max =
+                        Some(self.in_attribute("max", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "target" => {
+                    bandwidth.target =
+                        Some(self.in_attribute("target", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => bandwidth
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        self.consume_empty_element()?;
+        Ok(bandwidth)
+    }
+
+    fn parse_uint_pairs_with_id(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::UIntPairsWithId> {
+        use crate::model::UIntPairsWithId;
+
+        let mut pairs_obj = UIntPairsWithId::new();
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "type" => pairs_obj.value_type = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => pairs_obj
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        let pairs_text = self.parse_text_content()?;
+        pairs_obj.pairs = parse_uint_vector(&pairs_text)?;
+        Ok(pairs_obj)
+    }
+
+    fn parse_uint_v_with_id(&mut self, start: StartElement) -> Result<crate::model::UIntVWithId> {
+        use crate::model::UIntVWithId;
+
+        let mut id: Option<u32> = None;
+        let mut unknown_attributes: Vec<(String, String)> = Vec::new();
+        let mut profiles: Option<String> = None;
+        let mut content_type: Option<String> = None;
+
+        for attribute in start.attributes {
+            match attribute.name.as_str() {
+                "id" => {
+                    id = Some(self.in_attribute("id", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "profiles" => profiles = Some(attribute.value),
+                "contentType" => content_type = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => unknown_attributes.push((attribute.name, attribute.value)),
+            }
+        }
+
+        let mut v = UIntVWithId::new(id.ok_or_else(|| self.missing_attribute("id"))?);
+        v.profiles = profiles;
+        v.content_type = content_type;
+        v.unknown_attributes = unknown_attributes;
+
+        let values_text = self.parse_text_content()?;
+        v.values = parse_uint_vector(&values_text)?;
+        Ok(v)
+    }
+
+    fn parse_initialization_set(
+        &mut self,
+        start: StartElement,
+    ) -> Result<crate::model::InitializationSet> {
+        use crate::model::InitializationSet;
+
+        let mut init_set = InitializationSet::new(0);
+        let mut id: Option<u32> = None;
+
+        for attribute in start.attributes {
+            let Some(attribute) =
+                self.apply_representation_base_attribute(&mut init_set.base, attribute)?
+            else {
+                continue;
+            };
+            match attribute.name.as_str() {
+                "id" => {
+                    id = Some(self.in_attribute("id", parse_xs_unsigned_int(&attribute.value))?);
+                }
+                "inAllPeriods" => {
+                    init_set.in_all_periods =
+                        self.in_attribute("inAllPeriods", parse_xs_boolean(&attribute.value))?;
+                }
+                "contentType" => {
+                    init_set.content_type =
+                        Some(self.parse_attribute("contentType", &attribute.value)?);
+                }
+                "par" => {
+                    init_set.par = Some(self.parse_attribute("par", &attribute.value)?);
+                }
+                "maxWidth" => {
+                    init_set.max_width = Some(
+                        self.in_attribute("maxWidth", parse_xs_unsigned_int(&attribute.value))?,
+                    );
+                }
+                "maxHeight" => {
+                    init_set.max_height = Some(
+                        self.in_attribute("maxHeight", parse_xs_unsigned_int(&attribute.value))?,
+                    );
+                }
+                "maxFrameRate" => {
+                    init_set.max_frame_rate =
+                        Some(self.parse_attribute("maxFrameRate", &attribute.value)?);
+                }
+                "initialization" => init_set.initialization = Some(attribute.value),
+                "xmlns" => self.check_default_namespace_declaration(&attribute.value)?,
+                _ => init_set
+                    .base
+                    .unknown_attributes
+                    .push((attribute.name, attribute.value)),
+            }
+        }
+
+        init_set.id = id.ok_or_else(|| self.missing_attribute("id"))?;
+
+        while let Some(child) = self.next_content_event()? {
+            if child.matches(MPD_NAMESPACE, "Accessibility") {
+                let descriptor = self.parse_descriptor(child)?;
+                init_set.accessibilities.push(descriptor);
+            } else if child.matches(MPD_NAMESPACE, "Role") {
+                let descriptor = self.parse_descriptor(child)?;
+                init_set.roles.push(descriptor);
+            } else if child.matches(MPD_NAMESPACE, "Rating") {
+                let descriptor = self.parse_descriptor(child)?;
+                init_set.ratings.push(descriptor);
+            } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
+                let descriptor = self.parse_descriptor(child)?;
+                init_set.viewpoints.push(descriptor);
+            } else {
+                init_set
+                    .base
+                    .unknown_children
+                    .push(self.parse_unknown_element(child, 0)?);
+            }
+        }
+        Ok(init_set)
     }
 
     /// Applies one attribute of an element extending `RepresentationBaseType`
@@ -1217,6 +1789,44 @@ impl Deserializer<'_> {
         }
     }
 
+    fn parse_text_content(&mut self) -> Result<String> {
+        let mut text = String::new();
+        loop {
+            match self.reader.read_event()? {
+                Event::Start(_) => {
+                    return Err(self.element_error(ErrorKind::UnexpectedElement {
+                        name: "unexpected child element".to_string(),
+                    }));
+                }
+                Event::End => return Ok(text),
+                Event::Text(t) => text.push_str(&t),
+                Event::Eof => {
+                    return Err(self
+                        .element_error(ErrorKind::Xml("unexpected end of document".to_string())));
+                }
+            }
+        }
+    }
+
+    fn consume_empty_element(&mut self) -> Result<()> {
+        loop {
+            match self.reader.read_event()? {
+                Event::End => return Ok(()),
+                Event::Text(text) if is_xml_whitespace(&text) => {}
+                Event::Text(_) => return Err(self.element_error(ErrorKind::UnexpectedText)),
+                Event::Start(_) => {
+                    return Err(self.element_error(ErrorKind::UnexpectedElement {
+                        name: "unexpected child element".to_string(),
+                    }));
+                }
+                Event::Eof => {
+                    return Err(self
+                        .element_error(ErrorKind::Xml("unexpected end of document".to_string())));
+                }
+            }
+        }
+    }
+
     fn parse_unknown_element(&mut self, start: StartElement, depth: usize) -> Result<Element> {
         if depth >= MAX_UNKNOWN_ELEMENT_DEPTH {
             return Err(self.element_error(ErrorKind::Xml(format!(
@@ -1583,7 +2193,7 @@ mod tests {
             r#"xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" "#,
             r#"xsi:schemaLocation="urn:mpeg:dash:schema:mpd:2011 DASH-MPD.xsd" "#,
             r#"profiles="p" minBufferTime="PT2S">"#,
-            "<ProgramInformation><Title>demo</Title></ProgramInformation>",
+            "<FutureExtension><Detail>demo</Detail></FutureExtension>",
             "<Period>",
             r#"<AdaptationSet><ContentProtection xmlns:cenc="urn:mpeg:cenc:2013" "#,
             r#"schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc">"#,
@@ -1608,16 +2218,16 @@ mod tests {
         );
 
         match mpd.unknown_children.as_slice() {
-            [program_information] => {
-                assert_eq!(program_information.name, "ProgramInformation");
+            [future_extension] => {
+                assert_eq!(future_extension.name, "FutureExtension");
                 assert_eq!(
-                    program_information.namespace.as_deref(),
+                    future_extension.namespace.as_deref(),
                     Some("urn:mpeg:dash:schema:mpd:2011")
                 );
-                match program_information.children.as_slice() {
-                    [Node::Element(title)] => {
-                        assert_eq!(title.name, "Title");
-                        assert_eq!(title.children, vec![Node::Text("demo".to_string())]);
+                match future_extension.children.as_slice() {
+                    [Node::Element(detail)] => {
+                        assert_eq!(detail.name, "Detail");
+                        assert_eq!(detail.children, vec![Node::Text("demo".to_string())]);
                     }
                     other => panic!("unexpected children: {other:?}"),
                 }
