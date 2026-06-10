@@ -14,6 +14,7 @@ use std::str::FromStr;
 use crate::error::Error;
 use crate::model::descriptor::{ContentProtection, Descriptor};
 use crate::model::element::Element;
+use crate::model::period_representation::{EventStream, Label, Preselection, Subset};
 use crate::model::segment::{SegmentBase, SegmentList, SegmentTemplate};
 use crate::model::service_description::{ServiceDescription, UIntVWithId};
 use crate::model::types::{
@@ -189,14 +190,24 @@ pub struct Period {
     pub segment_template: Option<SegmentTemplate>,
     /// The `AssetIdentifier` child.
     pub asset_identifier: Option<Descriptor>,
+    /// The `EventStream` children.
+    pub event_streams: Vec<EventStream>,
     /// The `ServiceDescription` children.
     pub service_descriptions: Vec<ServiceDescription>,
     /// The `ContentProtection` children.
     pub content_protections: Vec<ContentProtection>,
     /// The `AdaptationSet` children.
     pub adaptation_sets: Vec<AdaptationSet>,
+    /// The `Subset` children.
+    pub subsets: Vec<Subset>,
     /// The `SupplementalProperty` children.
     pub supplemental_properties: Vec<Descriptor>,
+    /// The `EmptyAdaptationSet` children.
+    pub empty_adaptation_sets: Vec<AdaptationSet>,
+    /// The `GroupLabel` children.
+    pub group_labels: Vec<Label>,
+    /// The `Preselection` children.
+    pub preselections: Vec<Preselection>,
     /// Attributes without a typed field, as written.
     pub unknown_attributes: Vec<(String, String)>,
     /// Child elements without a typed field, re-serialized after the known
@@ -217,10 +228,15 @@ impl Period {
             segment_list: None,
             segment_template: None,
             asset_identifier: None,
+            event_streams: Vec::new(),
             service_descriptions: Vec::new(),
             content_protections: Vec::new(),
             adaptation_sets: Vec::new(),
+            subsets: Vec::new(),
             supplemental_properties: Vec::new(),
+            empty_adaptation_sets: Vec::new(),
+            group_labels: Vec::new(),
+            preselections: Vec::new(),
             unknown_attributes: Vec::new(),
             unknown_children: Vec::new(),
         }
@@ -285,6 +301,22 @@ pub struct RepresentationBase {
     pub essential_properties: Vec<Descriptor>,
     /// The `SupplementalProperty` children.
     pub supplemental_properties: Vec<Descriptor>,
+    /// The `InbandEventStream` children.
+    pub inband_event_streams: Vec<EventStream>,
+    /// The `Switching` children.
+    pub switchings: Vec<crate::model::period_representation::Switching>,
+    /// The `RandomAccess` children.
+    pub random_accesses: Vec<crate::model::period_representation::RandomAccess>,
+    /// The `GroupLabel` children.
+    pub group_labels: Vec<Label>,
+    /// The `Label` children.
+    pub labels: Vec<Label>,
+    /// The `ProducerReferenceTime` children.
+    pub producer_reference_times: Vec<crate::model::period_representation::ProducerReferenceTime>,
+    /// The `ContentPopularityRate` children.
+    pub content_popularity_rates: Vec<crate::model::period_representation::ContentPopularityRate>,
+    /// The `Resync` children.
+    pub resyncs: Vec<crate::model::period_representation::Resync>,
     /// Attributes without a typed field, as written.
     pub unknown_attributes: Vec<(String, String)>,
     /// Child elements without a typed field, re-serialized after the known
@@ -394,6 +426,8 @@ pub struct AdaptationSet {
     pub ratings: Vec<Descriptor>,
     /// The `Viewpoint` children.
     pub viewpoints: Vec<Descriptor>,
+    /// The `ContentComponent` children.
+    pub content_components: Vec<crate::model::period_representation::ContentComponent>,
     /// The `BaseURL` children.
     pub base_urls: Vec<BaseUrl>,
     /// The `SegmentBase` child.
@@ -498,6 +532,10 @@ pub struct Representation {
     pub media_stream_structure_id: Vec<String>,
     /// The `BaseURL` children.
     pub base_urls: Vec<BaseUrl>,
+    /// The `ExtendedBandwidth` children.
+    pub extended_bandwidths: Vec<crate::model::period_representation::ExtendedBandwidth>,
+    /// The `SubRepresentation` children.
+    pub sub_representations: Vec<crate::model::period_representation::SubRepresentation>,
     /// The `SegmentBase` child.
     pub segment_base: Option<SegmentBase>,
     /// The `SegmentList` child.
@@ -520,6 +558,8 @@ impl Representation {
             association_type: Vec::new(),
             media_stream_structure_id: Vec::new(),
             base_urls: Vec::new(),
+            extended_bandwidths: Vec::new(),
+            sub_representations: Vec::new(),
             segment_base: None,
             segment_list: None,
             segment_template: None,

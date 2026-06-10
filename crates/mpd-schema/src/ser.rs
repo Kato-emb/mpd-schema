@@ -162,6 +162,9 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
     if let Some(desc) = &period.asset_identifier {
         emit_descriptor(writer, desc, "AssetIdentifier")?;
     }
+    for es in &period.event_streams {
+        emit_event_stream(writer, es)?;
+    }
     for sd in &period.service_descriptions {
         emit_service_description(writer, sd)?;
     }
@@ -171,8 +174,20 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
     for adaptation_set in &period.adaptation_sets {
         emit_adaptation_set(writer, adaptation_set)?;
     }
+    for subset in &period.subsets {
+        emit_subset(writer, subset)?;
+    }
     for desc in &period.supplemental_properties {
         emit_descriptor(writer, desc, "SupplementalProperty")?;
+    }
+    for empty_as in &period.empty_adaptation_sets {
+        emit_adaptation_set(writer, empty_as)?;
+    }
+    for label in &period.group_labels {
+        emit_label(writer, label, "GroupLabel")?;
+    }
+    for preselection in &period.preselections {
+        emit_preselection(writer, preselection)?;
     }
     emit_unknown_children(writer, &period.unknown_children)?;
     writer.write_event(&Event::End)
@@ -279,6 +294,9 @@ fn emit_adaptation_set<W: io::Write>(
     for desc in &adaptation_set.viewpoints {
         emit_descriptor(writer, desc, "Viewpoint")?;
     }
+    for cc in &adaptation_set.content_components {
+        emit_content_component(writer, cc)?;
+    }
     for base_url in &adaptation_set.base_urls {
         emit_base_url(writer, base_url)?;
     }
@@ -335,6 +353,12 @@ fn emit_representation<W: io::Write>(
     for base_url in &representation.base_urls {
         emit_base_url(writer, base_url)?;
     }
+    for eb in &representation.extended_bandwidths {
+        emit_extended_bandwidth(writer, eb)?;
+    }
+    for sr in &representation.sub_representations {
+        emit_sub_representation(writer, sr)?;
+    }
     emit_segment_children(
         writer,
         representation.segment_base.as_ref(),
@@ -366,6 +390,30 @@ fn emit_representation_base_children<W: io::Write>(
     }
     for desc in &base.supplemental_properties {
         emit_descriptor(writer, desc, "SupplementalProperty")?;
+    }
+    for es in &base.inband_event_streams {
+        emit_event_stream(writer, es)?;
+    }
+    for sw in &base.switchings {
+        emit_switching(writer, sw)?;
+    }
+    for ra in &base.random_accesses {
+        emit_random_access(writer, ra)?;
+    }
+    for label in &base.group_labels {
+        emit_label(writer, label, "GroupLabel")?;
+    }
+    for label in &base.labels {
+        emit_label(writer, label, "Label")?;
+    }
+    for prt in &base.producer_reference_times {
+        emit_producer_reference_time(writer, prt)?;
+    }
+    for cpr in &base.content_popularity_rates {
+        emit_content_popularity_rate(writer, cpr)?;
+    }
+    for resync in &base.resyncs {
+        emit_resync(writer, resync)?;
     }
     Ok(())
 }
@@ -1096,6 +1144,343 @@ fn xs_double_lexical(value: f64) -> String {
     } else {
         value.to_string()
     }
+}
+
+fn emit_event_stream<W: io::Write>(
+    writer: &mut Writer<W>,
+    event_stream: &crate::model::period_representation::EventStream,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "schemeIdUri", &event_stream.scheme_id_uri);
+    push_optional(&mut attributes, "value", event_stream.value.as_ref());
+    push_optional(
+        &mut attributes,
+        "timescale",
+        event_stream.timescale.as_ref(),
+    );
+    if event_stream.presentation_time_offset != 0 {
+        push_attribute(
+            &mut attributes,
+            "presentationTimeOffset",
+            event_stream.presentation_time_offset,
+        );
+    }
+    push_optional(&mut attributes, "href", event_stream.href.as_ref());
+    push_unknown_attributes(&mut attributes, &event_stream.unknown_attributes);
+
+    start_element(writer, "EventStream", attributes)?;
+    for event in &event_stream.events {
+        emit_event(writer, event)?;
+    }
+    emit_unknown_children(writer, &event_stream.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_event<W: io::Write>(
+    writer: &mut Writer<W>,
+    event: &crate::model::period_representation::Event,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    if event.presentation_time != 0 {
+        push_attribute(&mut attributes, "presentationTime", event.presentation_time);
+    }
+    push_optional(&mut attributes, "duration", event.duration.as_ref());
+    push_optional(&mut attributes, "id", event.id.as_ref());
+    push_optional(
+        &mut attributes,
+        "contentEncoding",
+        event.content_encoding.as_ref(),
+    );
+    push_optional(&mut attributes, "messageData", event.message_data.as_ref());
+    push_unknown_attributes(&mut attributes, &event.unknown_attributes);
+
+    start_element(writer, "Event", attributes)?;
+    if let Some(text) = &event.text_content {
+        writer.write_event(&Event::Text(text.clone()))?;
+    }
+    emit_unknown_children(writer, &event.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_label<W: io::Write>(
+    writer: &mut Writer<W>,
+    label: &crate::model::period_representation::Label,
+    element_name: &str,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    if label.id != 0 {
+        push_attribute(&mut attributes, "id", label.id);
+    }
+    push_optional(&mut attributes, "lang", label.lang.as_ref());
+    push_unknown_attributes(&mut attributes, &label.unknown_attributes);
+
+    start_element(writer, element_name, attributes)?;
+    writer.write_event(&Event::Text(label.text.clone()))?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_subset<W: io::Write>(
+    writer: &mut Writer<W>,
+    subset: &crate::model::period_representation::Subset,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_list(&mut attributes, "contains", &subset.contains);
+    push_optional(&mut attributes, "id", subset.id.as_ref());
+    push_unknown_attributes(&mut attributes, &subset.unknown_attributes);
+
+    start_element(writer, "Subset", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_preselection<W: io::Write>(
+    writer: &mut Writer<W>,
+    preselection: &crate::model::period_representation::Preselection,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_representation_base_attributes(&mut attributes, &preselection.base);
+    if preselection.id != "1" {
+        push_attribute(&mut attributes, "id", &preselection.id);
+    }
+    push_list(
+        &mut attributes,
+        "preselectionComponents",
+        &preselection.preselection_components,
+    );
+    push_optional(&mut attributes, "lang", preselection.lang.as_ref());
+    push_attribute(&mut attributes, "order", preselection.order.to_string());
+    push_unknown_attributes(&mut attributes, &preselection.base.unknown_attributes);
+
+    start_element(writer, "Preselection", attributes)?;
+    emit_representation_base_children(writer, &preselection.base)?;
+    for desc in &preselection.accessibilities {
+        emit_descriptor(writer, desc, "Accessibility")?;
+    }
+    for desc in &preselection.roles {
+        emit_descriptor(writer, desc, "Role")?;
+    }
+    for desc in &preselection.ratings {
+        emit_descriptor(writer, desc, "Rating")?;
+    }
+    for desc in &preselection.viewpoints {
+        emit_descriptor(writer, desc, "Viewpoint")?;
+    }
+    emit_unknown_children(writer, &preselection.base.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_switching<W: io::Write>(
+    writer: &mut Writer<W>,
+    switching: &crate::model::period_representation::Switching,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "interval", switching.interval);
+    push_attribute(
+        &mut attributes,
+        "type",
+        switching.switching_type.to_string(),
+    );
+    push_unknown_attributes(&mut attributes, &switching.unknown_attributes);
+
+    start_element(writer, "Switching", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_random_access<W: io::Write>(
+    writer: &mut Writer<W>,
+    random_access: &crate::model::period_representation::RandomAccess,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "interval", random_access.interval);
+    push_attribute(
+        &mut attributes,
+        "type",
+        random_access.random_access_type.to_string(),
+    );
+    push_optional(
+        &mut attributes,
+        "minBufferTime",
+        random_access.min_buffer_time.as_ref(),
+    );
+    push_optional(
+        &mut attributes,
+        "bandwidth",
+        random_access.bandwidth.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &random_access.unknown_attributes);
+
+    start_element(writer, "RandomAccess", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_producer_reference_time<W: io::Write>(
+    writer: &mut Writer<W>,
+    prt: &crate::model::period_representation::ProducerReferenceTime,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "id", prt.id);
+    if prt.inband {
+        push_attribute(&mut attributes, "inband", "true");
+    }
+    push_attribute(
+        &mut attributes,
+        "type",
+        prt.producer_reference_time_type.to_string(),
+    );
+    push_optional(
+        &mut attributes,
+        "applicationScheme",
+        prt.application_scheme.as_ref(),
+    );
+    push_attribute(&mut attributes, "wallClockTime", &prt.wall_clock_time);
+    push_attribute(&mut attributes, "presentationTime", prt.presentation_time);
+    push_unknown_attributes(&mut attributes, &prt.unknown_attributes);
+
+    start_element(writer, "ProducerReferenceTime", attributes)?;
+    if let Some(desc) = &prt.utc_timing {
+        emit_descriptor(writer, desc, "UTCTiming")?;
+    }
+    emit_unknown_children(writer, &prt.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_content_popularity_rate<W: io::Write>(
+    writer: &mut Writer<W>,
+    cpr: &crate::model::period_representation::ContentPopularityRate,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "source", cpr.source.to_string());
+    push_optional(
+        &mut attributes,
+        "source_description",
+        cpr.source_description.as_ref(),
+    );
+    push_unknown_attributes(&mut attributes, &cpr.unknown_attributes);
+
+    start_element(writer, "ContentPopularityRate", attributes)?;
+    for pr in &cpr.rates {
+        emit_popularity_rate(writer, pr)?;
+    }
+    emit_unknown_children(writer, &cpr.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_popularity_rate<W: io::Write>(
+    writer: &mut Writer<W>,
+    pr: &crate::model::period_representation::PopularityRate,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(
+        &mut attributes,
+        "popularityRate",
+        pr.popularity_rate.as_ref(),
+    );
+    push_optional(&mut attributes, "start", pr.start.as_ref());
+    if pr.r != 0 {
+        push_attribute(&mut attributes, "r", pr.r);
+    }
+    push_unknown_attributes(&mut attributes, &pr.unknown_attributes);
+
+    start_element(writer, "PR", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_resync<W: io::Write>(
+    writer: &mut Writer<W>,
+    resync: &crate::model::period_representation::Resync,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "type", resync.resync_type.to_string());
+    push_optional(&mut attributes, "dT", resync.dt.as_ref());
+    push_optional(&mut attributes, "dImax", resync.di_max.as_ref());
+    if resync.di_min != 0.0 {
+        push_attribute(&mut attributes, "dImin", resync.di_min);
+    }
+    if resync.marker {
+        push_attribute(&mut attributes, "marker", "true");
+    }
+    push_unknown_attributes(&mut attributes, &resync.unknown_attributes);
+
+    start_element(writer, "Resync", attributes)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_content_component<W: io::Write>(
+    writer: &mut Writer<W>,
+    cc: &crate::model::period_representation::ContentComponent,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_optional(&mut attributes, "id", cc.id.as_ref());
+    push_optional(&mut attributes, "lang", cc.lang.as_ref());
+    push_optional(&mut attributes, "contentType", cc.content_type.as_ref());
+    push_optional(&mut attributes, "par", cc.par.as_ref());
+    push_optional(&mut attributes, "tag", cc.tag.as_ref());
+    push_unknown_attributes(&mut attributes, &cc.unknown_attributes);
+
+    start_element(writer, "ContentComponent", attributes)?;
+    for desc in &cc.accessibilities {
+        emit_descriptor(writer, desc, "Accessibility")?;
+    }
+    for desc in &cc.roles {
+        emit_descriptor(writer, desc, "Role")?;
+    }
+    for desc in &cc.ratings {
+        emit_descriptor(writer, desc, "Rating")?;
+    }
+    for desc in &cc.viewpoints {
+        emit_descriptor(writer, desc, "Viewpoint")?;
+    }
+    emit_unknown_children(writer, &cc.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_extended_bandwidth<W: io::Write>(
+    writer: &mut Writer<W>,
+    eb: &crate::model::period_representation::ExtendedBandwidth,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    if eb.vbr {
+        push_attribute(&mut attributes, "vbr", "true");
+    }
+    push_unknown_attributes(&mut attributes, &eb.unknown_attributes);
+
+    start_element(writer, "ExtendedBandwidth", attributes)?;
+    for mp in &eb.model_pairs {
+        emit_model_pair(writer, mp)?;
+    }
+    emit_unknown_children(writer, &eb.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_model_pair<W: io::Write>(
+    writer: &mut Writer<W>,
+    mp: &crate::model::period_representation::ModelPair,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_attribute(&mut attributes, "bufferTime", mp.buffer_time);
+    push_attribute(&mut attributes, "bandwidth", mp.bandwidth);
+    push_unknown_attributes(&mut attributes, &mp.unknown_attributes);
+
+    start_element(writer, "ModelPair", attributes)?;
+    emit_unknown_children(writer, &mp.unknown_children)?;
+    writer.write_event(&Event::End)
+}
+
+fn emit_sub_representation<W: io::Write>(
+    writer: &mut Writer<W>,
+    sr: &crate::model::period_representation::SubRepresentation,
+) -> Result<()> {
+    let mut attributes = Vec::new();
+    push_representation_base_attributes(&mut attributes, &sr.base);
+    push_optional(&mut attributes, "level", sr.level.as_ref());
+    push_list(&mut attributes, "dependencyLevel", &sr.dependency_level);
+    push_optional(&mut attributes, "bandwidth", sr.bandwidth.as_ref());
+    push_list(&mut attributes, "contentComponent", &sr.content_component);
+    push_unknown_attributes(&mut attributes, &sr.base.unknown_attributes);
+
+    start_element(writer, "SubRepresentation", attributes)?;
+    emit_representation_base_children(writer, &sr.base)?;
+    emit_unknown_children(writer, &sr.base.unknown_children)?;
+    writer.write_event(&Event::End)
 }
 
 #[cfg(test)]
