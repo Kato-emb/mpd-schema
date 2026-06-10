@@ -7,7 +7,11 @@
 /// survives a parse/serialize roundtrip. Names are kept lexically;
 /// serialization writes [`Element::name`] back as-is, which stays consistent
 /// because `xmlns:*` declarations are preserved in [`Element::attributes`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Equality is lexical, matching the roundtrip guarantee for unknown nodes:
+/// [`Element::namespace`] is ignored because it does not contribute to the
+/// serialized output.
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Element {
     /// The qualified name as written in the document (for example
@@ -42,6 +46,19 @@ impl Element {
         }
     }
 }
+
+// 「意味論的等価」(CONTEXT.md) における未知要素の等価は字句ベースであり、
+// `namespace` は解析時に解決された読み取り用の付加情報で再シリアライズ出力に
+// 寄与しないため、比較から除外する。
+impl PartialEq for Element {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.attributes == other.attributes
+            && self.children == other.children
+    }
+}
+
+impl Eq for Element {}
 
 /// A node in an unknown-content tree.
 ///

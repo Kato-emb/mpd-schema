@@ -76,6 +76,17 @@ pub enum ErrorKind {
     /// v1 accepts UTF-8 input only: input that is not valid UTF-8, or that
     /// declares another encoding in its XML declaration, is rejected.
     Encoding(String),
+    /// Character data appeared where only child elements may appear.
+    ///
+    /// The enclosing element is identified by [`Error::path`].
+    UnexpectedText,
+    /// An element that cannot be accepted at its position, such as a root
+    /// element other than `MPD`, or an unknown element outside any namespace
+    /// whose resolution would not survive a roundtrip.
+    UnexpectedElement {
+        /// The qualified name of the element found.
+        name: String,
+    },
 }
 
 impl fmt::Display for ErrorKind {
@@ -88,6 +99,10 @@ impl fmt::Display for ErrorKind {
                 write!(formatter, "invalid value `{value}`, expected {expected}")
             }
             Self::Encoding(message) => write!(formatter, "unsupported encoding: {message}"),
+            Self::UnexpectedText => formatter.write_str("unexpected character data"),
+            Self::UnexpectedElement { name } => {
+                write!(formatter, "unexpected element `{name}`")
+            }
         }
     }
 }

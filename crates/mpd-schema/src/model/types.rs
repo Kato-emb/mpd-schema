@@ -1,22 +1,21 @@
 //! Attribute value types for the simple types defined by `DASH-MPD.xsd`.
-//!
-//! `xs:dateTime` attributes are represented with [`chrono`] types and need no
-//! custom type here.
 
 use std::fmt;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 
+use chrono::{DateTime, FixedOffset, NaiveDateTime, SecondsFormat};
+
 use crate::error::{Error, ErrorKind};
 
-fn invalid_value(value: &str, expected: &str) -> Error {
+pub(crate) fn invalid_value(value: &str, expected: &str) -> Error {
     Error::new(ErrorKind::InvalidValue {
         value: value.to_string(),
         expected: expected.to_string(),
     })
 }
 
-fn parse_unsigned_digits(text: &str) -> Option<u32> {
+pub(crate) fn parse_unsigned_digits(text: &str) -> Option<u32> {
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -251,6 +250,61 @@ impl fmt::Display for XsDuration {
     }
 }
 
+/// An `xs:dateTime` value.
+///
+/// The XSD value space distinguishes values with and without a timezone
+/// offset, and both occur in real MPDs. The two kinds are kept apart because
+/// an offset cannot be invented for an offset-less value without changing
+/// its meaning.
+///
+/// Equality follows the wrapped [`chrono`] types: two [`XsDateTime::Zoned`]
+/// values are equal when they denote the same instant (`2017-05-01T09:00:00Z`
+/// equals `2017-05-01T11:00:00+02:00`), and a zoned value never equals an
+/// unzoned one. [`fmt::Display`] produces the canonical lexical form, with a
+/// zero offset written as `Z`.
+///
+/// ```
+/// use mpd_schema::model::types::XsDateTime;
+///
+/// let published: XsDateTime = "2026-06-10T12:00:00+00:00".parse()?;
+/// assert_eq!(published.to_string(), "2026-06-10T12:00:00Z");
+/// # Ok::<(), mpd_schema::error::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum XsDateTime {
+    /// A value with a timezone offset, such as `2026-06-10T12:00:00Z`.
+    Zoned(DateTime<FixedOffset>),
+    /// A value without a timezone offset, such as `2026-06-10T12:00:00`.
+    Unzoned(NaiveDateTime),
+}
+
+impl FromStr for XsDateTime {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "an `xs:dateTime` such as `2026-06-10T12:00:00Z`";
+        if let Ok(zoned) = DateTime::parse_from_rfc3339(input) {
+            Ok(Self::Zoned(zoned))
+        } else if let Ok(unzoned) = input.parse::<NaiveDateTime>() {
+            Ok(Self::Unzoned(unzoned))
+        } else {
+            Err(invalid_value(input, EXPECTED))
+        }
+    }
+}
+
+impl fmt::Display for XsDateTime {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Zoned(value) => {
+                formatter.write_str(&value.to_rfc3339_opts(SecondsFormat::AutoSi, true))
+            }
+            Self::Unzoned(value) => write!(formatter, "{}", value.format("%Y-%m-%dT%H:%M:%S%.f")),
+        }
+    }
+}
+
 /// A frame rate, as written in attributes of XSD type `FrameRateType`.
 ///
 /// The lexical form is `30` or `30000/1001`; an omitted denominator means 1.
@@ -365,6 +419,103 @@ impl fmt::Display for Ratio {
             write!(formatter, "{denominator}")?;
         }
         Ok(())
+    }
+}
+
+/// A stream access point type, as written in attributes of XSD type
+/// `SAPType` (`startWithSAP`, `subsegmentStartsWithSAP`, ...).
+///
+/// The schema restricts the value space to `0..=6`; the constructor is the
+/// single enforcement point shared by hand-built models, parsing, and
+/// serialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct Sap(u8);
+
+impl Sap {
+    /// Creates a SAP type.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorKind::InvalidValue`] when `value` is outside `0..=6`.
+    pub fn new(value: u8) -> Result<Self, Error> {
+        if value <= 6 {
+            Ok(Self(value))
+        } else {
+            Err(invalid_value(
+                &value.to_string(),
+                "a SAP type in the range 0..=6",
+            ))
+        }
+    }
+
+    /// The numeric value (`0..=6`).
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl FromStr for Sap {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "a SAP type in the range 0..=6";
+        let digits = input.strip_prefix('+').unwrap_or(input);
+        let parsed = parse_unsigned_digits(digits).ok_or_else(|| invalid_value(input, EXPECTED))?;
+        let parsed = u8::try_from(parsed).map_err(|_| invalid_value(input, EXPECTED))?;
+        Self::new(parsed).map_err(|_| invalid_value(input, EXPECTED))
+    }
+}
+
+impl fmt::Display for Sap {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+/// An `audioSamplingRate` value, as written in attributes of XSD type
+/// `AudioSamplingRateType`: a single rate, or a minimum/maximum pair.
+///
+/// The XSD expresses the value as a whitespace-separated `xs:unsignedInt`
+/// list of length 1 or 2; the two variants make the length restriction part
+/// of the type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AudioSamplingRate {
+    /// A single sampling rate, such as `48000`.
+    Single(u32),
+    /// A minimum and maximum sampling rate, such as `44100 48000`.
+    MinMax(u32, u32),
+}
+
+impl FromStr for AudioSamplingRate {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self, Error> {
+        const EXPECTED: &str = "one or two unsigned integers";
+        let invalid = || invalid_value(input, EXPECTED);
+        let parse_rate = |text: &str| {
+            let digits = text.strip_prefix('+').unwrap_or(text);
+            parse_unsigned_digits(digits).ok_or_else(invalid)
+        };
+        let mut rates = input.split_ascii_whitespace();
+        let first = parse_rate(rates.next().ok_or_else(invalid)?)?;
+        let Some(second) = rates.next() else {
+            return Ok(Self::Single(first));
+        };
+        let second = parse_rate(second)?;
+        if rates.next().is_some() {
+            return Err(invalid());
+        }
+        Ok(Self::MinMax(first, second))
+    }
+}
+
+impl fmt::Display for AudioSamplingRate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Single(rate) => write!(formatter, "{rate}"),
+            Self::MinMax(minimum, maximum) => write!(formatter, "{minimum} {maximum}"),
+        }
     }
 }
 
@@ -515,6 +666,65 @@ mod tests {
         }
     }
 
+    fn date_time(input: &str) -> XsDateTime {
+        input.parse().unwrap()
+    }
+
+    #[test]
+    fn date_time_zero_offset_displays_as_z() {
+        assert_eq!(
+            date_time("2026-06-10T12:00:00+00:00").to_string(),
+            "2026-06-10T12:00:00Z"
+        );
+        assert_eq!(
+            date_time("2026-06-10T12:00:00Z").to_string(),
+            "2026-06-10T12:00:00Z"
+        );
+    }
+
+    #[test]
+    fn date_time_keeps_nonzero_offset() {
+        assert_eq!(
+            date_time("2026-06-10T12:00:00+09:00").to_string(),
+            "2026-06-10T12:00:00+09:00"
+        );
+    }
+
+    #[test]
+    fn date_time_zoned_equality_compares_instants() {
+        assert_eq!(
+            date_time("2017-05-01T09:00:00Z"),
+            date_time("2017-05-01T11:00:00+02:00")
+        );
+    }
+
+    #[test]
+    fn date_time_keeps_fractional_seconds() {
+        assert_eq!(
+            date_time("2020-02-19T10:42:02.684Z").to_string(),
+            "2020-02-19T10:42:02.684Z"
+        );
+    }
+
+    #[test]
+    fn date_time_without_offset_roundtrips() {
+        let parsed = date_time("2011-05-10T06:16:42");
+        assert!(matches!(parsed, XsDateTime::Unzoned(_)));
+        assert_eq!(parsed.to_string(), "2011-05-10T06:16:42");
+        assert_ne!(parsed, date_time("2011-05-10T06:16:42Z"));
+    }
+
+    #[test]
+    fn date_time_rejects_malformed_input() {
+        let inputs = ["", "2026-06-10", "12:00:00", "abc", "2026-13-01T00:00:00Z"];
+        for input in inputs {
+            assert!(
+                input.parse::<XsDateTime>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
     #[test]
     fn frame_rate_parses_integer_form() {
         let parsed: FrameRate = "30".parse().unwrap();
@@ -573,6 +783,46 @@ mod tests {
         for input in inputs {
             assert!(
                 input.parse::<Ratio>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn sap_enforces_the_value_range_at_construction_and_parse() {
+        assert_eq!(Sap::new(0).unwrap().get(), 0);
+        assert_eq!(Sap::new(6).unwrap().get(), 6);
+        assert!(Sap::new(7).is_err());
+
+        let parsed: Sap = "1".parse().unwrap();
+        assert_eq!(parsed, Sap::new(1).unwrap());
+        assert_eq!(parsed.to_string(), "1");
+        for input in ["7", "-1", "4294967296", "", "abc"] {
+            assert!(
+                input.parse::<Sap>().is_err(),
+                "expected `{input}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn audio_sampling_rate_parses_one_or_two_rates() {
+        assert_eq!(
+            "48000".parse::<AudioSamplingRate>().unwrap(),
+            AudioSamplingRate::Single(48_000)
+        );
+        assert_eq!(
+            "44100 48000".parse::<AudioSamplingRate>().unwrap(),
+            AudioSamplingRate::MinMax(44_100, 48_000)
+        );
+        assert_eq!(AudioSamplingRate::Single(48_000).to_string(), "48000");
+        assert_eq!(
+            AudioSamplingRate::MinMax(44_100, 48_000).to_string(),
+            "44100 48000"
+        );
+        for input in ["", " ", "1 2 3", "a", "44100 b"] {
+            assert!(
+                input.parse::<AudioSamplingRate>().is_err(),
                 "expected `{input}` to be rejected"
             );
         }
