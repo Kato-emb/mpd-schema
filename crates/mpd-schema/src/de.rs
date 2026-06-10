@@ -181,28 +181,63 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "ProgramInformation") {
+                self.path.push(PathSegment {
+                    element_name: "ProgramInformation",
+                    sibling_index: Some(mpd.program_informations.len()),
+                });
                 let program_information = self.parse_program_information(child)?;
+                self.path.pop();
                 mpd.program_informations.push(program_information);
             } else if child.matches(MPD_NAMESPACE, "BaseURL") {
+                self.path.push(PathSegment {
+                    element_name: "BaseURL",
+                    sibling_index: Some(mpd.base_urls.len()),
+                });
                 let base_url = self.parse_base_url(child)?;
+                self.path.pop();
                 mpd.base_urls.push(base_url);
             } else if child.matches(MPD_NAMESPACE, "Location") {
                 let location = self.parse_text_content()?;
                 mpd.locations.push(location);
             } else if child.matches(MPD_NAMESPACE, "PatchLocation") {
+                self.path.push(PathSegment {
+                    element_name: "PatchLocation",
+                    sibling_index: Some(mpd.patch_locations.len()),
+                });
                 let patch_location = self.parse_patch_location(child)?;
+                self.path.pop();
                 mpd.patch_locations.push(patch_location);
             } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
+                self.path.push(PathSegment {
+                    element_name: "ServiceDescription",
+                    sibling_index: Some(mpd.service_descriptions.len()),
+                });
                 let service_description = self.parse_service_description(child)?;
+                self.path.pop();
                 mpd.service_descriptions.push(service_description);
             } else if child.matches(MPD_NAMESPACE, "InitializationSet") {
+                self.path.push(PathSegment {
+                    element_name: "InitializationSet",
+                    sibling_index: Some(mpd.initialization_sets.len()),
+                });
                 let initialization_set = self.parse_initialization_set(child)?;
+                self.path.pop();
                 mpd.initialization_sets.push(initialization_set);
             } else if child.matches(MPD_NAMESPACE, "InitializationGroup") {
+                self.path.push(PathSegment {
+                    element_name: "InitializationGroup",
+                    sibling_index: Some(mpd.initialization_groups.len()),
+                });
                 let initialization_group = self.parse_uint_v_with_id(child)?;
+                self.path.pop();
                 mpd.initialization_groups.push(initialization_group);
             } else if child.matches(MPD_NAMESPACE, "InitializationPresentation") {
+                self.path.push(PathSegment {
+                    element_name: "InitializationPresentation",
+                    sibling_index: Some(mpd.initialization_presentations.len()),
+                });
                 let initialization_presentation = self.parse_uint_v_with_id(child)?;
+                self.path.pop();
                 mpd.initialization_presentations
                     .push(initialization_presentation);
             } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
@@ -222,7 +257,12 @@ impl Deserializer<'_> {
                 self.path.pop();
                 mpd.periods.push(period);
             } else if child.matches(MPD_NAMESPACE, "Metrics") {
+                self.path.push(PathSegment {
+                    element_name: "Metrics",
+                    sibling_index: Some(mpd.metrics.len()),
+                });
                 let metrics = self.parse_metrics(child)?;
+                self.path.pop();
                 mpd.metrics.push(metrics);
             } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
                 self.path.push(PathSegment {
@@ -249,7 +289,12 @@ impl Deserializer<'_> {
                 self.path.pop();
                 mpd.utc_timings.push(desc);
             } else if child.matches(MPD_NAMESPACE, "LeapSecondInformation") {
+                self.path.push(PathSegment {
+                    element_name: "LeapSecondInformation",
+                    sibling_index: None,
+                });
                 let leap_second = self.parse_leap_second_information(child)?;
+                self.path.pop();
                 mpd.leap_second_information = Some(leap_second);
             } else {
                 mpd.unknown_children
@@ -284,7 +329,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
+                self.path.push(PathSegment {
+                    element_name: "BaseURL",
+                    sibling_index: Some(period.base_urls.len()),
+                });
                 let base_url = self.parse_base_url(child)?;
+                self.path.pop();
                 period.base_urls.push(base_url);
                 continue;
             }
@@ -306,7 +356,12 @@ impl Deserializer<'_> {
                     Self::parse_descriptor,
                 )?;
             } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
+                self.path.push(PathSegment {
+                    element_name: "ServiceDescription",
+                    sibling_index: Some(period.service_descriptions.len()),
+                });
                 let service_description = self.parse_service_description(child)?;
+                self.path.pop();
                 period.service_descriptions.push(service_description);
             } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
                 self.path.push(PathSegment {
@@ -444,7 +499,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
+                self.path.push(PathSegment {
+                    element_name: "BaseURL",
+                    sibling_index: Some(adaptation_set.base_urls.len()),
+                });
                 let base_url = self.parse_base_url(child)?;
+                self.path.pop();
                 adaptation_set.base_urls.push(base_url);
                 continue;
             }
@@ -573,7 +633,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
+                self.path.push(PathSegment {
+                    element_name: "BaseURL",
+                    sibling_index: Some(representation.base_urls.len()),
+                });
                 let base_url = self.parse_base_url(child)?;
+                self.path.pop();
                 representation.base_urls.push(base_url);
                 continue;
             }
@@ -824,19 +889,44 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Scope") {
+                self.path.push(PathSegment {
+                    element_name: "Scope",
+                    sibling_index: Some(service_desc.scopes.len()),
+                });
                 let descriptor = self.parse_descriptor(child)?;
+                self.path.pop();
                 service_desc.scopes.push(descriptor);
             } else if child.matches(MPD_NAMESPACE, "Latency") {
+                self.path.push(PathSegment {
+                    element_name: "Latency",
+                    sibling_index: Some(service_desc.latencies.len()),
+                });
                 let latency = self.parse_latency(child)?;
+                self.path.pop();
                 service_desc.latencies.push(latency);
             } else if child.matches(MPD_NAMESPACE, "PlaybackRate") {
+                self.path.push(PathSegment {
+                    element_name: "PlaybackRate",
+                    sibling_index: Some(service_desc.playback_rates.len()),
+                });
                 let playback_rate = self.parse_playback_rate(child)?;
+                self.path.pop();
                 service_desc.playback_rates.push(playback_rate);
             } else if child.matches(MPD_NAMESPACE, "OperatingQuality") {
+                self.path.push(PathSegment {
+                    element_name: "OperatingQuality",
+                    sibling_index: Some(service_desc.operating_qualities.len()),
+                });
                 let quality = self.parse_operating_quality(child)?;
+                self.path.pop();
                 service_desc.operating_qualities.push(quality);
             } else if child.matches(MPD_NAMESPACE, "OperatingBandwidth") {
+                self.path.push(PathSegment {
+                    element_name: "OperatingBandwidth",
+                    sibling_index: Some(service_desc.operating_bandwidths.len()),
+                });
                 let bandwidth = self.parse_operating_bandwidth(child)?;
+                self.path.pop();
                 service_desc.operating_bandwidths.push(bandwidth);
             } else {
                 service_desc
@@ -2659,6 +2749,40 @@ mod tests {
             assert!(matches!(error.kind, ErrorKind::InvalidValue { .. }));
             assert_eq!(error.path, "MPD > Period[0] > SegmentBase @ indexRange");
         }
+    }
+
+    #[test]
+    fn deep_path_segments_for_manifest_level_elements() {
+        // ServiceDescription > Latency with invalid referenceId attribute
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            r#"<ServiceDescription><Latency referenceId="invalid"/></ServiceDescription>"#,
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(
+            error.path.contains("ServiceDescription[0]")
+                && error.path.contains("Latency[0]")
+                && error.path.contains("referenceId"),
+            "expected deep path with ServiceDescription and Latency: {}",
+            error.path
+        );
+    }
+
+    #[test]
+    fn initialization_set_missing_id_shows_path() {
+        // InitializationSet without required id attribute
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            r#"<InitializationSet contentType="video"/>"#,
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert!(
+            error.path.contains("InitializationSet[0]") && error.path.contains("@ id"),
+            "expected path with InitializationSet and missing id: {}",
+            error.path
+        );
     }
 
     #[test]
