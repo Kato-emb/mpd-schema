@@ -236,6 +236,10 @@ impl Preselection {
 pub enum PreselectionOrder {
     /// Undefined order (`undefined`).
     Undefined,
+    /// Time-ordered (`time-ordered`).
+    TimeOrdered,
+    /// Fully-ordered (`fully-ordered`).
+    FullyOrdered,
 }
 
 impl FromStr for PreselectionOrder {
@@ -244,7 +248,12 @@ impl FromStr for PreselectionOrder {
     fn from_str(input: &str) -> Result<Self, Error> {
         match input {
             "undefined" => Ok(Self::Undefined),
-            _ => Err(invalid_value(input, "`undefined`")),
+            "time-ordered" => Ok(Self::TimeOrdered),
+            "fully-ordered" => Ok(Self::FullyOrdered),
+            _ => Err(invalid_value(
+                input,
+                "`undefined`, `time-ordered`, or `fully-ordered`",
+            )),
         }
     }
 }
@@ -253,6 +262,8 @@ impl fmt::Display for PreselectionOrder {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Undefined => formatter.write_str("undefined"),
+            Self::TimeOrdered => formatter.write_str("time-ordered"),
+            Self::FullyOrdered => formatter.write_str("fully-ordered"),
         }
     }
 }
@@ -348,6 +359,8 @@ pub enum RandomAccessType {
     Closed,
     /// Open random access (`open`).
     Open,
+    /// Gradual random access (`gradual`).
+    Gradual,
 }
 
 impl FromStr for RandomAccessType {
@@ -357,7 +370,8 @@ impl FromStr for RandomAccessType {
         match input {
             "closed" => Ok(Self::Closed),
             "open" => Ok(Self::Open),
-            _ => Err(invalid_value(input, "`closed` or `open`")),
+            "gradual" => Ok(Self::Gradual),
+            _ => Err(invalid_value(input, "`closed`, `open`, or `gradual`")),
         }
     }
 }
@@ -367,6 +381,7 @@ impl fmt::Display for RandomAccessType {
         match self {
             Self::Closed => formatter.write_str("closed"),
             Self::Open => formatter.write_str("open"),
+            Self::Gradual => formatter.write_str("gradual"),
         }
     }
 }
@@ -793,6 +808,7 @@ mod tests {
         for (lex, val) in [
             ("closed", RandomAccessType::Closed),
             ("open", RandomAccessType::Open),
+            ("gradual", RandomAccessType::Gradual),
         ] {
             assert_eq!(lex.parse::<RandomAccessType>().unwrap(), val);
             assert_eq!(val.to_string(), lex);
@@ -825,10 +841,13 @@ mod tests {
 
     #[test]
     fn preselection_order_roundtrips() {
-        assert_eq!(
-            "undefined".parse::<PreselectionOrder>().unwrap(),
-            PreselectionOrder::Undefined
-        );
-        assert_eq!(PreselectionOrder::Undefined.to_string(), "undefined");
+        for (lex, val) in [
+            ("undefined", PreselectionOrder::Undefined),
+            ("time-ordered", PreselectionOrder::TimeOrdered),
+            ("fully-ordered", PreselectionOrder::FullyOrdered),
+        ] {
+            assert_eq!(lex.parse::<PreselectionOrder>().unwrap(), val);
+            assert_eq!(val.to_string(), lex);
+        }
     }
 }

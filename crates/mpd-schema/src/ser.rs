@@ -163,7 +163,7 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
         emit_descriptor(writer, desc, "AssetIdentifier")?;
     }
     for es in &period.event_streams {
-        emit_event_stream(writer, es)?;
+        emit_event_stream(writer, es, "EventStream")?;
     }
     for sd in &period.service_descriptions {
         emit_service_description(writer, sd)?;
@@ -172,7 +172,7 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
         emit_content_protection(writer, cp)?;
     }
     for adaptation_set in &period.adaptation_sets {
-        emit_adaptation_set(writer, adaptation_set)?;
+        emit_adaptation_set(writer, adaptation_set, "AdaptationSet")?;
     }
     for subset in &period.subsets {
         emit_subset(writer, subset)?;
@@ -181,7 +181,7 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
         emit_descriptor(writer, desc, "SupplementalProperty")?;
     }
     for empty_as in &period.empty_adaptation_sets {
-        emit_adaptation_set(writer, empty_as)?;
+        emit_adaptation_set(writer, empty_as, "EmptyAdaptationSet")?;
     }
     for label in &period.group_labels {
         emit_label(writer, label, "GroupLabel")?;
@@ -196,6 +196,7 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
 fn emit_adaptation_set<W: io::Write>(
     writer: &mut Writer<W>,
     adaptation_set: &AdaptationSet,
+    element_name: &str,
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_representation_base_attributes(&mut attributes, &adaptation_set.base);
@@ -280,7 +281,7 @@ fn emit_adaptation_set<W: io::Write>(
     );
     push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes);
 
-    start_element(writer, "AdaptationSet", attributes)?;
+    start_element(writer, element_name, attributes)?;
     emit_representation_base_children(writer, &adaptation_set.base)?;
     for desc in &adaptation_set.accessibilities {
         emit_descriptor(writer, desc, "Accessibility")?;
@@ -392,7 +393,7 @@ fn emit_representation_base_children<W: io::Write>(
         emit_descriptor(writer, desc, "SupplementalProperty")?;
     }
     for es in &base.inband_event_streams {
-        emit_event_stream(writer, es)?;
+        emit_event_stream(writer, es, "InbandEventStream")?;
     }
     for sw in &base.switchings {
         emit_switching(writer, sw)?;
@@ -461,11 +462,13 @@ fn emit_base_url<W: io::Write>(
         base_url.service_location.as_ref(),
     );
     push_optional(&mut attributes, "byteRange", base_url.byte_range.as_ref());
-    push_optional(
-        &mut attributes,
-        "availabilityTimeOffset",
-        base_url.availability_time_offset.as_ref(),
-    );
+    if let Some(availability_time_offset) = base_url.availability_time_offset {
+        push_attribute(
+            &mut attributes,
+            "availabilityTimeOffset",
+            xs_double_lexical(availability_time_offset),
+        );
+    }
     push_optional(
         &mut attributes,
         "availabilityTimeComplete",
@@ -490,7 +493,9 @@ fn emit_patch_location<W: io::Write>(
     patch: &crate::model::PatchLocation,
 ) -> Result<()> {
     let mut attributes = Vec::new();
-    push_optional(&mut attributes, "ttl", patch.ttl.as_ref());
+    if let Some(ttl) = patch.ttl {
+        push_attribute(&mut attributes, "ttl", xs_double_lexical(ttl));
+    }
     push_unknown_attributes(&mut attributes, &patch.unknown_attributes);
     start_element(writer, "PatchLocation", attributes)?;
     writer.write_event(&Event::Text(patch.url.clone()))?;
@@ -551,8 +556,12 @@ fn emit_playback_rate<W: io::Write>(
     rate: &crate::model::PlaybackRate,
 ) -> Result<()> {
     let mut attributes = Vec::new();
-    push_optional(&mut attributes, "min", rate.min.as_ref());
-    push_optional(&mut attributes, "max", rate.max.as_ref());
+    if let Some(min) = rate.min {
+        push_attribute(&mut attributes, "min", xs_double_lexical(min));
+    }
+    if let Some(max) = rate.max {
+        push_attribute(&mut attributes, "max", xs_double_lexical(max));
+    }
     push_unknown_attributes(&mut attributes, &rate.unknown_attributes);
     start_element(writer, "PlaybackRate", attributes)?;
     writer.write_event(&Event::End)
@@ -1146,9 +1155,25 @@ fn xs_double_lexical(value: f64) -> String {
     }
 }
 
+fn xs_float_lexical(value: f32) -> String {
+    if value.is_nan() {
+        "NaN".to_string()
+    } else if value.is_infinite() {
+        if value.is_sign_positive() {
+            "INF"
+        } else {
+            "-INF"
+        }
+        .to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 fn emit_event_stream<W: io::Write>(
     writer: &mut Writer<W>,
     event_stream: &crate::model::period_representation::EventStream,
+    element_name: &str,
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_attribute(&mut attributes, "schemeIdUri", &event_stream.scheme_id_uri);
@@ -1165,10 +1190,15 @@ fn emit_event_stream<W: io::Write>(
             event_stream.presentation_time_offset,
         );
     }
-    push_optional(&mut attributes, "href", event_stream.href.as_ref());
+    push_optional(&mut attributes, "xlink:href", event_stream.href.as_ref());
+    push_optional(
+        &mut attributes,
+        "xlink:actuate",
+        event_stream.actuate.as_ref(),
+    );
     push_unknown_attributes(&mut attributes, &event_stream.unknown_attributes);
 
-    start_element(writer, "EventStream", attributes)?;
+    start_element(writer, element_name, attributes)?;
     for event in &event_stream.events {
         emit_event(writer, event)?;
     }
@@ -1391,9 +1421,11 @@ fn emit_resync<W: io::Write>(
     let mut attributes = Vec::new();
     push_attribute(&mut attributes, "type", resync.resync_type.to_string());
     push_optional(&mut attributes, "dT", resync.dt.as_ref());
-    push_optional(&mut attributes, "dImax", resync.di_max.as_ref());
+    if let Some(di_max) = resync.di_max {
+        push_attribute(&mut attributes, "dImax", xs_float_lexical(di_max));
+    }
     if resync.di_min != 0.0 {
-        push_attribute(&mut attributes, "dImin", resync.di_min);
+        push_attribute(&mut attributes, "dImin", xs_float_lexical(resync.di_min));
     }
     if resync.marker {
         push_attribute(&mut attributes, "marker", "true");
@@ -1592,14 +1624,16 @@ mod tests {
             period_position < future_extension_position,
             "unknown children must follow known children: {output}"
         );
-        // ContentProtection is now a typed element, so it should appear before unknown children.
+        // ContentProtection is now a typed AdaptationSet child, so it must be
+        // emitted after the AdaptationSet start tag and before the
+        // Representation that follows it in the RepresentationBase sequence.
         let adaptation_set_position = output.find("<AdaptationSet").unwrap();
         let content_protection_position = output.find("<ContentProtection").unwrap();
-        let future_extension_in_adaptation_position = output.rfind("<FutureExtension").unwrap();
+        let representation_position = output.find("<Representation").unwrap();
         assert!(
             adaptation_set_position < content_protection_position
-                && content_protection_position < future_extension_in_adaptation_position,
-            "ContentProtection (known) must follow AdaptationSet and precede unknown children: {output}"
+                && content_protection_position < representation_position,
+            "ContentProtection (known) must follow AdaptationSet and precede Representation: {output}"
         );
         assert!(output.contains("<cenc:pssh>AAAA</cenc:pssh>"));
         assert!(
@@ -1753,5 +1787,93 @@ mod tests {
             "<Period/>",
             "</MPD>",
         ));
+    }
+
+    /// Every Period- and RepresentationBase-level element added in this slice
+    /// now parses back into its typed field, so the whole tree survives a
+    /// roundtrip and the elements with distinct serialized tag names
+    /// (`InbandEventStream`, `EmptyAdaptationSet`) are not confused with their
+    /// siblings.
+    #[test]
+    fn period_and_base_children_roundtrip() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+            r#"xmlns:xlink="http://www.w3.org/1999/xlink" profiles="p" minBufferTime="PT2S">"#,
+            "<Period>",
+            r#"<EventStream schemeIdUri="urn:evt" value="v" timescale="1000" "#,
+            r#"presentationTimeOffset="500" xlink:href="evt.xml" xlink:actuate="onLoad">"#,
+            r#"<Event presentationTime="0" duration="100" id="1">payload</Event>"#,
+            "</EventStream>",
+            r#"<AdaptationSet mimeType="video/mp4">"#,
+            r#"<InbandEventStream schemeIdUri="urn:inband"/>"#,
+            r#"<Switching interval="10" type="bitstream"/>"#,
+            r#"<RandomAccess interval="5" type="gradual" minBufferTime="PT1S" bandwidth="700"/>"#,
+            r#"<GroupLabel id="2">grp</GroupLabel>"#,
+            r#"<Label id="1" lang="en">lbl</Label>"#,
+            r#"<ProducerReferenceTime id="1" wallClockTime="2026-06-10T00:00:00Z" presentationTime="0">"#,
+            r#"<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014"/>"#,
+            "</ProducerReferenceTime>",
+            r#"<ContentPopularityRate source="content"><PR popularityRate="50" r="-1"/></ContentPopularityRate>"#,
+            r#"<Resync type="1" dImax="INF" dImin="0.5" marker="true"/>"#,
+            r#"<ContentComponent id="1" lang="en"><Role schemeIdUri="urn:role" value="main"/></ContentComponent>"#,
+            r#"<Representation id="v0" bandwidth="1000">"#,
+            r#"<ExtendedBandwidth vbr="true"><ModelPair bufferTime="PT1S" bandwidth="500"/></ExtendedBandwidth>"#,
+            r#"<SubRepresentation level="0" bandwidth="800"/>"#,
+            "</Representation>",
+            "</AdaptationSet>",
+            r#"<Subset contains="0 1" id="s1"/>"#,
+            r#"<EmptyAdaptationSet id="9"/>"#,
+            "<GroupLabel>periodgrp</GroupLabel>",
+            r#"<Preselection id="p1" preselectionComponents="v0 a0" order="time-ordered"/>"#,
+            "</Period>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+
+        assert!(
+            output.contains(r#"<InbandEventStream schemeIdUri="urn:inband">"#),
+            "InbandEventStream must keep its own tag name: {output}"
+        );
+        assert!(
+            output.contains(r#"<EmptyAdaptationSet id="9">"#),
+            "EmptyAdaptationSet must keep its own tag name: {output}"
+        );
+        assert!(
+            output.contains(r#"xlink:href="evt.xml""#)
+                && output.contains(r#"xlink:actuate="onLoad""#),
+            "EventStream xlink attributes must roundtrip: {output}"
+        );
+        assert!(output.contains(r#"type="gradual""#), "{output}");
+        assert!(output.contains(r#"dImax="INF""#), "{output}");
+        assert!(output.contains(r#"order="time-ordered""#), "{output}");
+    }
+
+    /// `xs:double` and `xs:float` attributes carrying `INF` must serialize to
+    /// the XSD lexical form `INF`, not Rust's `Display` form `inf`, so the
+    /// value parses back instead of being rejected as `InvalidValue`.
+    #[test]
+    fn infinite_double_and_float_attributes_roundtrip() {
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            r#"<BaseURL availabilityTimeOffset="INF">https://cdn.example/</BaseURL>"#,
+            r#"<PatchLocation ttl="INF">patch.mpp</PatchLocation>"#,
+            r#"<ServiceDescription id="0"><PlaybackRate min="-INF" max="INF"/></ServiceDescription>"#,
+            "<Period/>",
+            "</MPD>",
+        );
+        let mpd = assert_roundtrip(input);
+        let output = serialize(&mpd);
+        assert!(
+            output.contains(r#"availabilityTimeOffset="INF""#),
+            "{output}"
+        );
+        assert!(output.contains(r#"ttl="INF""#), "{output}");
+        assert!(output.contains(r#"min="-INF""#), "{output}");
+        assert!(output.contains(r#"max="INF""#), "{output}");
+        assert!(
+            !output.contains("inf"),
+            "must not emit Display form: {output}"
+        );
     }
 }
