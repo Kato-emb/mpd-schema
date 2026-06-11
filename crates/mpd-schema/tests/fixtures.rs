@@ -158,7 +158,10 @@ fn xmllint_validate(schema: &Path, name: &str, document: &[u8]) -> Result<(), St
     // 読み取り前に（スキーマ/カタログ読込失敗等で）終了した際に write が
     // Broken pipe で panic し、原因を示す stderr を取り逃す。さらに大きな
     // 入力かつ大量のエラー出力では stdin/stderr 相互ブロックの恐れもある。
-    let document_path = std::env::temp_dir().join(format!("mpd-schema-xsd-{name}"));
+    // PID を含めて、並行 worktree の同時実行が同じ一時パスを奪い合わない
+    // ようにする（互いの document を上書き / 削除して spurious fail になる）。
+    let document_path =
+        std::env::temp_dir().join(format!("mpd-schema-xsd-{}-{name}", std::process::id()));
     fs::write(&document_path, document).unwrap_or_else(|error| {
         panic!(
             "一時ファイルに書けない（{}）: {error}",
