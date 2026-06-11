@@ -4,8 +4,11 @@ members = ["crates/mpd-schema"]
 
 [workspace.package]
 edition = "2024"
+# edition 2024 が Rust 1.85 を要求し、依存（quick-xml 1.79 / chrono 1.62）より厳しい。
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Kato-emb/mpd-schema"
+readme = "README.md"
 
 # Rust lints. CI が -D warnings で warning を error に昇格させる。
 [workspace.lints.rust]
