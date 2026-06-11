@@ -11,41 +11,55 @@ destination="$repository_root/fixtures/dashschema"
 
 mkdir -p "$repository_root/fixtures/private"
 
-if [ -f "$destination/DASH-MPD.xsd" ]; then
-    echo "fixtures already present: $destination (delete the directory to re-fetch)"
-else
-    temporary_directory="$(mktemp -d)"
-    trap 'rm -rf "$temporary_directory"' EXIT
-
-    tarball="$temporary_directory/dashschema.tar.gz"
-    echo "downloading $TARBALL_URL"
-    curl -fsSL --retry 3 -o "$tarball" "$TARBALL_URL"
-    echo "$TARBALL_SHA256  $tarball" | sha256sum -c -
-
-    mkdir -p "$temporary_directory/extracted"
-    tar -xzf "$tarball" -C "$temporary_directory/extracted" --strip-components=1
-
-    rm -rf "$destination"
-    mv "$temporary_directory/extracted" "$destination"
-
-    echo "fetched DASHSchema 5th-Ed into $destination"
-fi
-
+# 単一ファイルを sha256 固定で取得する。既存ファイルも照合し、不一致なら
+# 再取得する（ピン先は可変な vendor エンドポイントなので、pin 更新を
+# ローカルにも伝播させる）。検証失敗時は staging（.download）を残さない。
 fetch_pinned() {
     local url="$1"
     local sha256="$2"
     local target="$3"
 
     if [ -f "$target" ]; then
-        echo "already present: $target (delete the file to re-fetch)"
-        return
+        if echo "$sha256  $target" | sha256sum -c --status -; then
+            echo "already present: $target"
+            return
+        fi
+        echo "sha256 mismatch, re-fetching: $target"
     fi
 
     echo "downloading $url"
     curl -fsSL --retry 3 -o "$target.download" "$url"
-    echo "$sha256  $target.download" | sha256sum -c -
+    if ! echo "$sha256  $target.download" | sha256sum -c --status -; then
+        rm -f "$target.download"
+        echo "sha256 verification failed: $url" >&2
+        exit 1
+    fi
     mv "$target.download" "$target"
 }
+
+if [ -f "$destination/DASH-MPD.xsd" ]; then
+    echo "fixtures already present: $destination (delete the directory to re-fetch)"
+else
+    staging=""
+    temporary_directory="$(mktemp -d)"
+    trap 'rm -rf "$temporary_directory" "$staging"' EXIT
+
+    tarball="$temporary_directory/dashschema.tar.gz"
+    fetch_pinned "$TARBALL_URL" "$TARBALL_SHA256" "$tarball"
+
+    # staging は fixtures/ 内（destination と同一ファイルシステム）に作り、
+    # 展開完了後に rename する。tmpfs からのクロス FS な mv は非アトミックな
+    # 再帰コピーで、中断すると sentinel（DASH-MPD.xsd）だけ残り samples 欠落の
+    # 壊れた状態が固定化する。同一 FS の rename ならアトミックでこれを防ぐ。
+    mkdir -p "$repository_root/fixtures"
+    staging="$(mktemp -d "$repository_root/fixtures/.dashschema.XXXXXX")"
+    tar -xzf "$tarball" -C "$staging" --strip-components=1
+
+    rm -rf "$destination"
+    mv "$staging" "$destination"
+
+    echo "fetched DASHSchema 5th-Ed into $destination"
+fi
 
 # DRM 付き実 MPD（未知ノード保持テスト用）。DASH-IF Test Vector Database 掲載の
 # ベクタだが git リポジトリではなく散在 URL のため、ファイル単位で sha256 固定
