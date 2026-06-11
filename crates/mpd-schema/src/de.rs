@@ -181,134 +181,100 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "ProgramInformation") {
-                self.path.push(PathSegment {
-                    element_name: "ProgramInformation",
-                    sibling_index: Some(mpd.program_informations.len()),
-                });
-                let program_information = self.parse_program_information(child)?;
-                self.path.pop();
-                mpd.program_informations.push(program_information);
+                self.parse_repeated_child(
+                    &mut mpd.program_informations,
+                    "ProgramInformation",
+                    child,
+                    Self::parse_program_information,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "BaseURL") {
-                self.path.push(PathSegment {
-                    element_name: "BaseURL",
-                    sibling_index: Some(mpd.base_urls.len()),
-                });
-                let base_url = self.parse_base_url(child)?;
-                self.path.pop();
-                mpd.base_urls.push(base_url);
+                self.parse_repeated_child(
+                    &mut mpd.base_urls,
+                    "BaseURL",
+                    child,
+                    Self::parse_base_url,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Location") {
-                self.path.push(PathSegment {
-                    element_name: "Location",
-                    sibling_index: Some(mpd.locations.len()),
-                });
-                for attribute in &child.attributes {
-                    if attribute.name == "xmlns" {
-                        self.check_default_namespace_declaration(&attribute.value)?;
-                    }
-                }
-                let location = self.parse_text_content()?;
-                self.path.pop();
-                mpd.locations.push(location);
+                self.parse_repeated_child(
+                    &mut mpd.locations,
+                    "Location",
+                    child,
+                    Self::parse_location,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "PatchLocation") {
-                self.path.push(PathSegment {
-                    element_name: "PatchLocation",
-                    sibling_index: Some(mpd.patch_locations.len()),
-                });
-                let patch_location = self.parse_patch_location(child)?;
-                self.path.pop();
-                mpd.patch_locations.push(patch_location);
+                self.parse_repeated_child(
+                    &mut mpd.patch_locations,
+                    "PatchLocation",
+                    child,
+                    Self::parse_patch_location,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
-                self.path.push(PathSegment {
-                    element_name: "ServiceDescription",
-                    sibling_index: Some(mpd.service_descriptions.len()),
-                });
-                let service_description = self.parse_service_description(child)?;
-                self.path.pop();
-                mpd.service_descriptions.push(service_description);
+                self.parse_repeated_child(
+                    &mut mpd.service_descriptions,
+                    "ServiceDescription",
+                    child,
+                    Self::parse_service_description,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "InitializationSet") {
-                self.path.push(PathSegment {
-                    element_name: "InitializationSet",
-                    sibling_index: Some(mpd.initialization_sets.len()),
-                });
-                let initialization_set = self.parse_initialization_set(child)?;
-                self.path.pop();
-                mpd.initialization_sets.push(initialization_set);
+                self.parse_repeated_child(
+                    &mut mpd.initialization_sets,
+                    "InitializationSet",
+                    child,
+                    Self::parse_initialization_set,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "InitializationGroup") {
-                self.path.push(PathSegment {
-                    element_name: "InitializationGroup",
-                    sibling_index: Some(mpd.initialization_groups.len()),
-                });
-                let initialization_group = self.parse_uint_v_with_id(child)?;
-                self.path.pop();
-                mpd.initialization_groups.push(initialization_group);
+                self.parse_repeated_child(
+                    &mut mpd.initialization_groups,
+                    "InitializationGroup",
+                    child,
+                    Self::parse_uint_v_with_id,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "InitializationPresentation") {
-                self.path.push(PathSegment {
-                    element_name: "InitializationPresentation",
-                    sibling_index: Some(mpd.initialization_presentations.len()),
-                });
-                let initialization_presentation = self.parse_uint_v_with_id(child)?;
-                self.path.pop();
-                mpd.initialization_presentations
-                    .push(initialization_presentation);
+                self.parse_repeated_child(
+                    &mut mpd.initialization_presentations,
+                    "InitializationPresentation",
+                    child,
+                    Self::parse_uint_v_with_id,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
-                self.path.push(PathSegment {
-                    element_name: "ContentProtection",
-                    sibling_index: Some(mpd.content_protections.len()),
-                });
-                let cp = self.parse_content_protection(child)?;
-                self.path.pop();
-                mpd.content_protections.push(cp);
+                self.parse_repeated_child(
+                    &mut mpd.content_protections,
+                    "ContentProtection",
+                    child,
+                    Self::parse_content_protection,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Period") {
-                self.path.push(PathSegment {
-                    element_name: "Period",
-                    sibling_index: Some(mpd.periods.len()),
-                });
-                let period = self.parse_period(child)?;
-                self.path.pop();
-                mpd.periods.push(period);
+                self.parse_repeated_child(&mut mpd.periods, "Period", child, Self::parse_period)?;
             } else if child.matches(MPD_NAMESPACE, "Metrics") {
-                self.path.push(PathSegment {
-                    element_name: "Metrics",
-                    sibling_index: Some(mpd.metrics.len()),
-                });
-                let metrics = self.parse_metrics(child)?;
-                self.path.pop();
-                mpd.metrics.push(metrics);
+                self.parse_repeated_child(&mut mpd.metrics, "Metrics", child, Self::parse_metrics)?;
             } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
-                self.path.push(PathSegment {
-                    element_name: "EssentialProperty",
-                    sibling_index: Some(mpd.essential_properties.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                mpd.essential_properties.push(desc);
+                self.parse_repeated_child(
+                    &mut mpd.essential_properties,
+                    "EssentialProperty",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
-                self.path.push(PathSegment {
-                    element_name: "SupplementalProperty",
-                    sibling_index: Some(mpd.supplemental_properties.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                mpd.supplemental_properties.push(desc);
+                self.parse_repeated_child(
+                    &mut mpd.supplemental_properties,
+                    "SupplementalProperty",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "UTCTiming") {
-                self.path.push(PathSegment {
-                    element_name: "UTCTiming",
-                    sibling_index: Some(mpd.utc_timings.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                mpd.utc_timings.push(desc);
+                self.parse_repeated_child(
+                    &mut mpd.utc_timings,
+                    "UTCTiming",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "LeapSecondInformation") {
-                if mpd.leap_second_information.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                self.path.push(PathSegment {
-                    element_name: "LeapSecondInformation",
-                    sibling_index: None,
-                });
-                let leap_second = self.parse_leap_second_information(child)?;
-                self.path.pop();
-                mpd.leap_second_information = Some(leap_second);
+                self.parse_singular_child(
+                    &mut mpd.leap_second_information,
+                    "LeapSecondInformation",
+                    child,
+                    Self::parse_leap_second_information,
+                )?;
             } else {
                 mpd.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -342,13 +308,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
-                self.path.push(PathSegment {
-                    element_name: "BaseURL",
-                    sibling_index: Some(period.base_urls.len()),
-                });
-                let base_url = self.parse_base_url(child)?;
-                self.path.pop();
-                period.base_urls.push(base_url);
+                self.parse_repeated_child(
+                    &mut period.base_urls,
+                    "BaseURL",
+                    child,
+                    Self::parse_base_url,
+                )?;
                 continue;
             }
 
@@ -369,77 +334,68 @@ impl Deserializer<'_> {
                     Self::parse_descriptor,
                 )?;
             } else if child.matches(MPD_NAMESPACE, "ServiceDescription") {
-                self.path.push(PathSegment {
-                    element_name: "ServiceDescription",
-                    sibling_index: Some(period.service_descriptions.len()),
-                });
-                let service_description = self.parse_service_description(child)?;
-                self.path.pop();
-                period.service_descriptions.push(service_description);
+                self.parse_repeated_child(
+                    &mut period.service_descriptions,
+                    "ServiceDescription",
+                    child,
+                    Self::parse_service_description,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
-                self.path.push(PathSegment {
-                    element_name: "ContentProtection",
-                    sibling_index: Some(period.content_protections.len()),
-                });
-                let cp = self.parse_content_protection(child)?;
-                self.path.pop();
-                period.content_protections.push(cp);
+                self.parse_repeated_child(
+                    &mut period.content_protections,
+                    "ContentProtection",
+                    child,
+                    Self::parse_content_protection,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "EventStream") {
-                self.path.push(PathSegment {
-                    element_name: "EventStream",
-                    sibling_index: Some(period.event_streams.len()),
-                });
-                let event_stream = self.parse_event_stream(child)?;
-                self.path.pop();
-                period.event_streams.push(event_stream);
+                self.parse_repeated_child(
+                    &mut period.event_streams,
+                    "EventStream",
+                    child,
+                    Self::parse_event_stream,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "AdaptationSet") {
-                self.path.push(PathSegment {
-                    element_name: "AdaptationSet",
-                    sibling_index: Some(period.adaptation_sets.len()),
-                });
-                let adaptation_set = self.parse_adaptation_set(child)?;
-                self.path.pop();
-                period.adaptation_sets.push(adaptation_set);
+                self.parse_repeated_child(
+                    &mut period.adaptation_sets,
+                    "AdaptationSet",
+                    child,
+                    Self::parse_adaptation_set,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Subset") {
-                self.path.push(PathSegment {
-                    element_name: "Subset",
-                    sibling_index: Some(period.subsets.len()),
-                });
-                let subset = self.parse_subset(child)?;
-                self.path.pop();
-                period.subsets.push(subset);
+                self.parse_repeated_child(
+                    &mut period.subsets,
+                    "Subset",
+                    child,
+                    Self::parse_subset,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
-                self.path.push(PathSegment {
-                    element_name: "SupplementalProperty",
-                    sibling_index: Some(period.supplemental_properties.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                period.supplemental_properties.push(desc);
+                self.parse_repeated_child(
+                    &mut period.supplemental_properties,
+                    "SupplementalProperty",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "EmptyAdaptationSet") {
-                self.path.push(PathSegment {
-                    element_name: "EmptyAdaptationSet",
-                    sibling_index: Some(period.empty_adaptation_sets.len()),
-                });
-                let adaptation_set = self.parse_adaptation_set(child)?;
-                self.path.pop();
-                period.empty_adaptation_sets.push(adaptation_set);
+                self.parse_repeated_child(
+                    &mut period.empty_adaptation_sets,
+                    "EmptyAdaptationSet",
+                    child,
+                    Self::parse_adaptation_set,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "GroupLabel") {
-                self.path.push(PathSegment {
-                    element_name: "GroupLabel",
-                    sibling_index: Some(period.group_labels.len()),
-                });
-                let label = self.parse_label(child)?;
-                self.path.pop();
-                period.group_labels.push(label);
+                self.parse_repeated_child(
+                    &mut period.group_labels,
+                    "GroupLabel",
+                    child,
+                    Self::parse_label,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Preselection") {
-                self.path.push(PathSegment {
-                    element_name: "Preselection",
-                    sibling_index: Some(period.preselections.len()),
-                });
-                let preselection = self.parse_preselection(child)?;
-                self.path.pop();
-                period.preselections.push(preselection);
+                self.parse_repeated_child(
+                    &mut period.preselections,
+                    "Preselection",
+                    child,
+                    Self::parse_preselection,
+                )?;
             } else {
                 period
                     .unknown_children
@@ -552,13 +508,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
-                self.path.push(PathSegment {
-                    element_name: "BaseURL",
-                    sibling_index: Some(adaptation_set.base_urls.len()),
-                });
-                let base_url = self.parse_base_url(child)?;
-                self.path.pop();
-                adaptation_set.base_urls.push(base_url);
+                self.parse_repeated_child(
+                    &mut adaptation_set.base_urls,
+                    "BaseURL",
+                    child,
+                    Self::parse_base_url,
+                )?;
                 continue;
             }
 
@@ -578,53 +533,47 @@ impl Deserializer<'_> {
                 continue;
             };
             if child.matches(MPD_NAMESPACE, "Accessibility") {
-                self.path.push(PathSegment {
-                    element_name: "Accessibility",
-                    sibling_index: Some(adaptation_set.accessibilities.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                adaptation_set.accessibilities.push(desc);
+                self.parse_repeated_child(
+                    &mut adaptation_set.accessibilities,
+                    "Accessibility",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Role") {
-                self.path.push(PathSegment {
-                    element_name: "Role",
-                    sibling_index: Some(adaptation_set.roles.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                adaptation_set.roles.push(desc);
+                self.parse_repeated_child(
+                    &mut adaptation_set.roles,
+                    "Role",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Rating") {
-                self.path.push(PathSegment {
-                    element_name: "Rating",
-                    sibling_index: Some(adaptation_set.ratings.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                adaptation_set.ratings.push(desc);
+                self.parse_repeated_child(
+                    &mut adaptation_set.ratings,
+                    "Rating",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
-                self.path.push(PathSegment {
-                    element_name: "Viewpoint",
-                    sibling_index: Some(adaptation_set.viewpoints.len()),
-                });
-                let desc = self.parse_descriptor(child)?;
-                self.path.pop();
-                adaptation_set.viewpoints.push(desc);
+                self.parse_repeated_child(
+                    &mut adaptation_set.viewpoints,
+                    "Viewpoint",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "ContentComponent") {
-                self.path.push(PathSegment {
-                    element_name: "ContentComponent",
-                    sibling_index: Some(adaptation_set.content_components.len()),
-                });
-                let content_component = self.parse_content_component(child)?;
-                self.path.pop();
-                adaptation_set.content_components.push(content_component);
+                self.parse_repeated_child(
+                    &mut adaptation_set.content_components,
+                    "ContentComponent",
+                    child,
+                    Self::parse_content_component,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Representation") {
-                self.path.push(PathSegment {
-                    element_name: "Representation",
-                    sibling_index: Some(adaptation_set.representations.len()),
-                });
-                let representation = self.parse_representation(child)?;
-                self.path.pop();
-                adaptation_set.representations.push(representation);
+                self.parse_repeated_child(
+                    &mut adaptation_set.representations,
+                    "Representation",
+                    child,
+                    Self::parse_representation,
+                )?;
             } else {
                 adaptation_set
                     .base
@@ -694,13 +643,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "BaseURL") {
-                self.path.push(PathSegment {
-                    element_name: "BaseURL",
-                    sibling_index: Some(representation.base_urls.len()),
-                });
-                let base_url = self.parse_base_url(child)?;
-                self.path.pop();
-                representation.base_urls.push(base_url);
+                self.parse_repeated_child(
+                    &mut representation.base_urls,
+                    "BaseURL",
+                    child,
+                    Self::parse_base_url,
+                )?;
                 continue;
             }
 
@@ -720,21 +668,19 @@ impl Deserializer<'_> {
                 continue;
             };
             if child.matches(MPD_NAMESPACE, "ExtendedBandwidth") {
-                self.path.push(PathSegment {
-                    element_name: "ExtendedBandwidth",
-                    sibling_index: Some(representation.extended_bandwidths.len()),
-                });
-                let extended_bandwidth = self.parse_extended_bandwidth(child)?;
-                self.path.pop();
-                representation.extended_bandwidths.push(extended_bandwidth);
+                self.parse_repeated_child(
+                    &mut representation.extended_bandwidths,
+                    "ExtendedBandwidth",
+                    child,
+                    Self::parse_extended_bandwidth,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "SubRepresentation") {
-                self.path.push(PathSegment {
-                    element_name: "SubRepresentation",
-                    sibling_index: Some(representation.sub_representations.len()),
-                });
-                let sub_representation = self.parse_sub_representation(child)?;
-                self.path.pop();
-                representation.sub_representations.push(sub_representation);
+                self.parse_repeated_child(
+                    &mut representation.sub_representations,
+                    "SubRepresentation",
+                    child,
+                    Self::parse_sub_representation,
+                )?;
             } else {
                 representation
                     .base
@@ -765,20 +711,20 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Title") {
-                if pi.title.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.title = Some(self.parse_text_content()?);
+                self.parse_singular_child(&mut pi.title, "Title", child, |parser, _child| {
+                    parser.parse_text_content()
+                })?;
             } else if child.matches(MPD_NAMESPACE, "Source") {
-                if pi.source.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.source = Some(self.parse_text_content()?);
+                self.parse_singular_child(&mut pi.source, "Source", child, |parser, _child| {
+                    parser.parse_text_content()
+                })?;
             } else if child.matches(MPD_NAMESPACE, "Copyright") {
-                if pi.copyright.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.copyright = Some(self.parse_text_content()?);
+                self.parse_singular_child(
+                    &mut pi.copyright,
+                    "Copyright",
+                    child,
+                    |parser, _child| parser.parse_text_content(),
+                )?;
             } else {
                 pi.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -848,6 +794,15 @@ impl Deserializer<'_> {
         Ok(patch)
     }
 
+    fn parse_location(&mut self, start: StartElement) -> Result<String> {
+        for attribute in &start.attributes {
+            if attribute.name == "xmlns" {
+                self.check_default_namespace_declaration(&attribute.value)?;
+            }
+        }
+        self.parse_text_content()
+    }
+
     fn parse_range(&mut self, start: StartElement) -> Result<crate::model::Range> {
         use crate::model::Range;
 
@@ -891,11 +846,14 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Range") {
-                let range = self.parse_range(child)?;
-                metrics.ranges.push(range);
+                self.parse_repeated_child(&mut metrics.ranges, "Range", child, Self::parse_range)?;
             } else if child.matches(MPD_NAMESPACE, "Reporting") {
-                let descriptor = self.parse_descriptor(child)?;
-                metrics.reportings.push(descriptor);
+                self.parse_repeated_child(
+                    &mut metrics.reportings,
+                    "Reporting",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else {
                 metrics
                     .unknown_children
@@ -977,45 +935,40 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Scope") {
-                self.path.push(PathSegment {
-                    element_name: "Scope",
-                    sibling_index: Some(service_desc.scopes.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                service_desc.scopes.push(descriptor);
+                self.parse_repeated_child(
+                    &mut service_desc.scopes,
+                    "Scope",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Latency") {
-                self.path.push(PathSegment {
-                    element_name: "Latency",
-                    sibling_index: Some(service_desc.latencies.len()),
-                });
-                let latency = self.parse_latency(child)?;
-                self.path.pop();
-                service_desc.latencies.push(latency);
+                self.parse_repeated_child(
+                    &mut service_desc.latencies,
+                    "Latency",
+                    child,
+                    Self::parse_latency,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "PlaybackRate") {
-                self.path.push(PathSegment {
-                    element_name: "PlaybackRate",
-                    sibling_index: Some(service_desc.playback_rates.len()),
-                });
-                let playback_rate = self.parse_playback_rate(child)?;
-                self.path.pop();
-                service_desc.playback_rates.push(playback_rate);
+                self.parse_repeated_child(
+                    &mut service_desc.playback_rates,
+                    "PlaybackRate",
+                    child,
+                    Self::parse_playback_rate,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "OperatingQuality") {
-                self.path.push(PathSegment {
-                    element_name: "OperatingQuality",
-                    sibling_index: Some(service_desc.operating_qualities.len()),
-                });
-                let quality = self.parse_operating_quality(child)?;
-                self.path.pop();
-                service_desc.operating_qualities.push(quality);
+                self.parse_repeated_child(
+                    &mut service_desc.operating_qualities,
+                    "OperatingQuality",
+                    child,
+                    Self::parse_operating_quality,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "OperatingBandwidth") {
-                self.path.push(PathSegment {
-                    element_name: "OperatingBandwidth",
-                    sibling_index: Some(service_desc.operating_bandwidths.len()),
-                });
-                let bandwidth = self.parse_operating_bandwidth(child)?;
-                self.path.pop();
-                service_desc.operating_bandwidths.push(bandwidth);
+                self.parse_repeated_child(
+                    &mut service_desc.operating_bandwidths,
+                    "OperatingBandwidth",
+                    child,
+                    Self::parse_operating_bandwidth,
+                )?;
             } else {
                 service_desc
                     .unknown_children
@@ -1057,8 +1010,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "QualityLatency") {
-                let quality_latency = self.parse_uint_pairs_with_id(child)?;
-                latency.quality_latencies.push(quality_latency);
+                self.parse_repeated_child(
+                    &mut latency.quality_latencies,
+                    "QualityLatency",
+                    child,
+                    Self::parse_uint_pairs_with_id,
+                )?;
             } else {
                 latency
                     .unknown_children
@@ -1282,37 +1239,33 @@ impl Deserializer<'_> {
                 continue;
             };
             if child.matches(MPD_NAMESPACE, "Accessibility") {
-                self.path.push(PathSegment {
-                    element_name: "Accessibility",
-                    sibling_index: Some(init_set.accessibilities.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                init_set.accessibilities.push(descriptor);
+                self.parse_repeated_child(
+                    &mut init_set.accessibilities,
+                    "Accessibility",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Role") {
-                self.path.push(PathSegment {
-                    element_name: "Role",
-                    sibling_index: Some(init_set.roles.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                init_set.roles.push(descriptor);
+                self.parse_repeated_child(
+                    &mut init_set.roles,
+                    "Role",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Rating") {
-                self.path.push(PathSegment {
-                    element_name: "Rating",
-                    sibling_index: Some(init_set.ratings.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                init_set.ratings.push(descriptor);
+                self.parse_repeated_child(
+                    &mut init_set.ratings,
+                    "Rating",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
-                self.path.push(PathSegment {
-                    element_name: "Viewpoint",
-                    sibling_index: Some(init_set.viewpoints.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                init_set.viewpoints.push(descriptor);
+                self.parse_repeated_child(
+                    &mut init_set.viewpoints,
+                    "Viewpoint",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else {
                 init_set
                     .base
@@ -1396,29 +1349,26 @@ impl Deserializer<'_> {
         child: StartElement,
     ) -> Result<Option<StartElement>> {
         if child.matches(MPD_NAMESPACE, "FramePacking") {
-            self.path.push(PathSegment {
-                element_name: "FramePacking",
-                sibling_index: Some(base.frame_packings.len()),
-            });
-            let desc = self.parse_descriptor(child)?;
-            self.path.pop();
-            base.frame_packings.push(desc);
+            self.parse_repeated_child(
+                &mut base.frame_packings,
+                "FramePacking",
+                child,
+                Self::parse_descriptor,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "AudioChannelConfiguration") {
-            self.path.push(PathSegment {
-                element_name: "AudioChannelConfiguration",
-                sibling_index: Some(base.audio_channel_configurations.len()),
-            });
-            let desc = self.parse_descriptor(child)?;
-            self.path.pop();
-            base.audio_channel_configurations.push(desc);
+            self.parse_repeated_child(
+                &mut base.audio_channel_configurations,
+                "AudioChannelConfiguration",
+                child,
+                Self::parse_descriptor,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "ContentProtection") {
-            self.path.push(PathSegment {
-                element_name: "ContentProtection",
-                sibling_index: Some(base.content_protections.len()),
-            });
-            let cp = self.parse_content_protection(child)?;
-            self.path.pop();
-            base.content_protections.push(cp);
+            self.parse_repeated_child(
+                &mut base.content_protections,
+                "ContentProtection",
+                child,
+                Self::parse_content_protection,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "OutputProtection") {
             self.parse_singular_child(
                 &mut base.output_protection,
@@ -1427,85 +1377,65 @@ impl Deserializer<'_> {
                 Self::parse_descriptor,
             )?;
         } else if child.matches(MPD_NAMESPACE, "EssentialProperty") {
-            self.path.push(PathSegment {
-                element_name: "EssentialProperty",
-                sibling_index: Some(base.essential_properties.len()),
-            });
-            let desc = self.parse_descriptor(child)?;
-            self.path.pop();
-            base.essential_properties.push(desc);
+            self.parse_repeated_child(
+                &mut base.essential_properties,
+                "EssentialProperty",
+                child,
+                Self::parse_descriptor,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "SupplementalProperty") {
-            self.path.push(PathSegment {
-                element_name: "SupplementalProperty",
-                sibling_index: Some(base.supplemental_properties.len()),
-            });
-            let desc = self.parse_descriptor(child)?;
-            self.path.pop();
-            base.supplemental_properties.push(desc);
+            self.parse_repeated_child(
+                &mut base.supplemental_properties,
+                "SupplementalProperty",
+                child,
+                Self::parse_descriptor,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "InbandEventStream") {
-            self.path.push(PathSegment {
-                element_name: "InbandEventStream",
-                sibling_index: Some(base.inband_event_streams.len()),
-            });
-            let event_stream = self.parse_event_stream(child)?;
-            self.path.pop();
-            base.inband_event_streams.push(event_stream);
+            self.parse_repeated_child(
+                &mut base.inband_event_streams,
+                "InbandEventStream",
+                child,
+                Self::parse_event_stream,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "Switching") {
-            self.path.push(PathSegment {
-                element_name: "Switching",
-                sibling_index: Some(base.switchings.len()),
-            });
-            let switching = self.parse_switching(child)?;
-            self.path.pop();
-            base.switchings.push(switching);
+            self.parse_repeated_child(
+                &mut base.switchings,
+                "Switching",
+                child,
+                Self::parse_switching,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "RandomAccess") {
-            self.path.push(PathSegment {
-                element_name: "RandomAccess",
-                sibling_index: Some(base.random_accesses.len()),
-            });
-            let random_access = self.parse_random_access(child)?;
-            self.path.pop();
-            base.random_accesses.push(random_access);
+            self.parse_repeated_child(
+                &mut base.random_accesses,
+                "RandomAccess",
+                child,
+                Self::parse_random_access,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "GroupLabel") {
-            self.path.push(PathSegment {
-                element_name: "GroupLabel",
-                sibling_index: Some(base.group_labels.len()),
-            });
-            let label = self.parse_label(child)?;
-            self.path.pop();
-            base.group_labels.push(label);
+            self.parse_repeated_child(
+                &mut base.group_labels,
+                "GroupLabel",
+                child,
+                Self::parse_label,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "Label") {
-            self.path.push(PathSegment {
-                element_name: "Label",
-                sibling_index: Some(base.labels.len()),
-            });
-            let label = self.parse_label(child)?;
-            self.path.pop();
-            base.labels.push(label);
+            self.parse_repeated_child(&mut base.labels, "Label", child, Self::parse_label)?;
         } else if child.matches(MPD_NAMESPACE, "ProducerReferenceTime") {
-            self.path.push(PathSegment {
-                element_name: "ProducerReferenceTime",
-                sibling_index: Some(base.producer_reference_times.len()),
-            });
-            let producer_reference_time = self.parse_producer_reference_time(child)?;
-            self.path.pop();
-            base.producer_reference_times.push(producer_reference_time);
+            self.parse_repeated_child(
+                &mut base.producer_reference_times,
+                "ProducerReferenceTime",
+                child,
+                Self::parse_producer_reference_time,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "ContentPopularityRate") {
-            self.path.push(PathSegment {
-                element_name: "ContentPopularityRate",
-                sibling_index: Some(base.content_popularity_rates.len()),
-            });
-            let content_popularity_rate = self.parse_content_popularity_rate(child)?;
-            self.path.pop();
-            base.content_popularity_rates.push(content_popularity_rate);
+            self.parse_repeated_child(
+                &mut base.content_popularity_rates,
+                "ContentPopularityRate",
+                child,
+                Self::parse_content_popularity_rate,
+            )?;
         } else if child.matches(MPD_NAMESPACE, "Resync") {
-            self.path.push(PathSegment {
-                element_name: "Resync",
-                sibling_index: Some(base.resyncs.len()),
-            });
-            let resync = self.parse_resync(child)?;
-            self.path.pop();
-            base.resyncs.push(resync);
+            self.parse_repeated_child(&mut base.resyncs, "Resync", child, Self::parse_resync)?;
         } else {
             return Ok(Some(child));
         }
@@ -1558,6 +1488,7 @@ impl Deserializer<'_> {
         child: StartElement,
         parse: impl FnOnce(&mut Self, StartElement) -> Result<T>,
     ) -> Result<()> {
+        debug_assert!(child.matches(MPD_NAMESPACE, element_name));
         if slot.is_some() {
             return Err(self.duplicate_element(child.name));
         }
@@ -1568,6 +1499,24 @@ impl Deserializer<'_> {
         let parsed = parse(self, child)?;
         self.path.pop();
         *slot = Some(parsed);
+        Ok(())
+    }
+
+    fn parse_repeated_child<T>(
+        &mut self,
+        collection: &mut Vec<T>,
+        element_name: &'static str,
+        child: StartElement,
+        parse: impl FnOnce(&mut Self, StartElement) -> Result<T>,
+    ) -> Result<()> {
+        debug_assert!(child.matches(MPD_NAMESPACE, element_name));
+        self.path.push(PathSegment {
+            element_name,
+            sibling_index: Some(collection.len()),
+        });
+        let parsed = parse(self, child)?;
+        self.path.pop();
+        collection.push(parsed);
         Ok(())
     }
 
@@ -1613,13 +1562,12 @@ impl Deserializer<'_> {
         }
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "SegmentURL") {
-                self.path.push(PathSegment {
-                    element_name: "SegmentURL",
-                    sibling_index: Some(segment_list.segment_urls.len()),
-                });
-                let segment_url = self.parse_segment_url(child)?;
-                self.path.pop();
-                segment_list.segment_urls.push(segment_url);
+                self.parse_repeated_child(
+                    &mut segment_list.segment_urls,
+                    "SegmentURL",
+                    child,
+                    Self::parse_segment_url,
+                )?;
             } else if let Some(child) =
                 self.apply_multiple_segment_base_child(&mut segment_list.base, child)?
             {
@@ -1867,13 +1815,12 @@ impl Deserializer<'_> {
         }
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "FCS") {
-                self.path.push(PathSegment {
-                    element_name: "FCS",
-                    sibling_index: Some(failover_content.fcs_entries.len()),
-                });
-                let fcs = self.parse_fcs(child)?;
-                self.path.pop();
-                failover_content.fcs_entries.push(fcs);
+                self.parse_repeated_child(
+                    &mut failover_content.fcs_entries,
+                    "FCS",
+                    child,
+                    Self::parse_fcs,
+                )?;
             } else {
                 failover_content
                     .unknown_children
@@ -2013,13 +1960,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Event") {
-                self.path.push(PathSegment {
-                    element_name: "Event",
-                    sibling_index: Some(event_stream.events.len()),
-                });
-                let event = self.parse_event(child)?;
-                self.path.pop();
-                event_stream.events.push(event);
+                self.parse_repeated_child(
+                    &mut event_stream.events,
+                    "Event",
+                    child,
+                    Self::parse_event,
+                )?;
             } else {
                 event_stream
                     .unknown_children
@@ -2303,13 +2249,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "PR") {
-                self.path.push(PathSegment {
-                    element_name: "PR",
-                    sibling_index: Some(content_popularity_rate.rates.len()),
-                });
-                let rate = self.parse_popularity_rate(child)?;
-                self.path.pop();
-                content_popularity_rate.rates.push(rate);
+                self.parse_repeated_child(
+                    &mut content_popularity_rate.rates,
+                    "PR",
+                    child,
+                    Self::parse_popularity_rate,
+                )?;
             } else {
                 content_popularity_rate
                     .unknown_children
@@ -2413,37 +2358,33 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Accessibility") {
-                self.path.push(PathSegment {
-                    element_name: "Accessibility",
-                    sibling_index: Some(content_component.accessibilities.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                content_component.accessibilities.push(descriptor);
+                self.parse_repeated_child(
+                    &mut content_component.accessibilities,
+                    "Accessibility",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Role") {
-                self.path.push(PathSegment {
-                    element_name: "Role",
-                    sibling_index: Some(content_component.roles.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                content_component.roles.push(descriptor);
+                self.parse_repeated_child(
+                    &mut content_component.roles,
+                    "Role",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Rating") {
-                self.path.push(PathSegment {
-                    element_name: "Rating",
-                    sibling_index: Some(content_component.ratings.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                content_component.ratings.push(descriptor);
+                self.parse_repeated_child(
+                    &mut content_component.ratings,
+                    "Rating",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
-                self.path.push(PathSegment {
-                    element_name: "Viewpoint",
-                    sibling_index: Some(content_component.viewpoints.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                content_component.viewpoints.push(descriptor);
+                self.parse_repeated_child(
+                    &mut content_component.viewpoints,
+                    "Viewpoint",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else {
                 content_component
                     .unknown_children
@@ -2475,13 +2416,12 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "ModelPair") {
-                self.path.push(PathSegment {
-                    element_name: "ModelPair",
-                    sibling_index: Some(extended_bandwidth.model_pairs.len()),
-                });
-                let model_pair = self.parse_model_pair(child)?;
-                self.path.pop();
-                extended_bandwidth.model_pairs.push(model_pair);
+                self.parse_repeated_child(
+                    &mut extended_bandwidth.model_pairs,
+                    "ModelPair",
+                    child,
+                    Self::parse_model_pair,
+                )?;
             } else {
                 extended_bandwidth
                     .unknown_children
@@ -2577,37 +2517,33 @@ impl Deserializer<'_> {
                 continue;
             };
             if child.matches(MPD_NAMESPACE, "Accessibility") {
-                self.path.push(PathSegment {
-                    element_name: "Accessibility",
-                    sibling_index: Some(preselection.accessibilities.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                preselection.accessibilities.push(descriptor);
+                self.parse_repeated_child(
+                    &mut preselection.accessibilities,
+                    "Accessibility",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Role") {
-                self.path.push(PathSegment {
-                    element_name: "Role",
-                    sibling_index: Some(preselection.roles.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                preselection.roles.push(descriptor);
+                self.parse_repeated_child(
+                    &mut preselection.roles,
+                    "Role",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Rating") {
-                self.path.push(PathSegment {
-                    element_name: "Rating",
-                    sibling_index: Some(preselection.ratings.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                preselection.ratings.push(descriptor);
+                self.parse_repeated_child(
+                    &mut preselection.ratings,
+                    "Rating",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else if child.matches(MPD_NAMESPACE, "Viewpoint") {
-                self.path.push(PathSegment {
-                    element_name: "Viewpoint",
-                    sibling_index: Some(preselection.viewpoints.len()),
-                });
-                let descriptor = self.parse_descriptor(child)?;
-                self.path.pop();
-                preselection.viewpoints.push(descriptor);
+                self.parse_repeated_child(
+                    &mut preselection.viewpoints,
+                    "Viewpoint",
+                    child,
+                    Self::parse_descriptor,
+                )?;
             } else {
                 preselection
                     .base
@@ -2681,13 +2617,12 @@ impl Deserializer<'_> {
         }
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "S") {
-                self.path.push(PathSegment {
-                    element_name: "S",
-                    sibling_index: Some(segment_timeline.segments.len()),
-                });
-                let segment = self.parse_s(child)?;
-                self.path.pop();
-                segment_timeline.segments.push(segment);
+                self.parse_repeated_child(
+                    &mut segment_timeline.segments,
+                    "S",
+                    child,
+                    Self::parse_s,
+                )?;
             } else {
                 segment_timeline
                     .unknown_children
@@ -3648,6 +3583,18 @@ mod tests {
             "expected deep path with ServiceDescription and Latency: {}",
             error.path
         );
+    }
+
+    #[test]
+    fn metrics_range_invalid_attribute_includes_range_path() {
+        // Metrics > Range had no path segment, so the error path skipped `Range[0]`.
+        let input = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="p" minBufferTime="PT2S">"#,
+            r#"<Metrics metrics="m"><Range starttime="invalid"/></Metrics>"#,
+            "</MPD>",
+        );
+        let error = mpd_from_slice(input.as_bytes()).unwrap_err();
+        assert_eq!(error.path, "MPD > Metrics[0] > Range[0] @ starttime");
     }
 
     #[test]
