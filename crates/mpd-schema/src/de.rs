@@ -11,7 +11,7 @@ use crate::backend::Reader;
 use crate::error::{Error, ErrorKind, Result};
 use crate::event::{Attribute, Event, StartElement};
 use crate::model::descriptor::{ContentProtection, Descriptor};
-use crate::model::element::{Element, Node};
+use crate::model::element::{Element, MAX_UNKNOWN_ELEMENT_DEPTH, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, PresentationType, Representation, RepresentationBase,
 };
@@ -20,11 +20,6 @@ use crate::model::segment::{
     SegmentTimeline, SegmentUrl, Url,
 };
 use crate::model::types::{XsDateTime, XsDuration, invalid_value, parse_unsigned_digits};
-
-/// 未知サブツリーは再帰で読むが、スキーマと違って深さに上限がないため、
-/// 信頼できない入力によるスタック溢れを防ぐ上限を設ける。実在の MPD の
-/// 未知ツリーは高々数段。
-const MAX_UNKNOWN_ELEMENT_DEPTH: usize = 256;
 
 pub(crate) fn mpd_from_slice(input: &[u8]) -> Result<Mpd> {
     let mut deserializer = Deserializer {

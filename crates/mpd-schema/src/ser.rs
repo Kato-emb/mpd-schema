@@ -8,10 +8,10 @@ use std::fmt;
 use std::io;
 
 use crate::backend::Writer;
-use crate::error::Result;
+use crate::error::{Error, ErrorKind, Result};
 use crate::event::{Attribute, Event, StartElement};
 use crate::model::descriptor::{ContentProtection, Descriptor};
-use crate::model::element::{Element, Node};
+use crate::model::element::{Element, MAX_UNKNOWN_ELEMENT_DEPTH, Node};
 use crate::model::mpd::{
     AdaptationSet, MPD_NAMESPACE, Mpd, Period, Representation, RepresentationBase,
 };
@@ -19,6 +19,7 @@ use crate::model::segment::{
     FailoverContent, Fcs, MultipleSegmentBase, S, SegmentBase, SegmentList, SegmentTemplate,
     SegmentTimeline, SegmentUrl, Url,
 };
+use crate::model::types::invalid_value;
 
 pub(crate) fn write_mpd<W: io::Write>(mpd: &Mpd, sink: W) -> Result<W> {
     let mut writer = Writer::new(sink);
@@ -83,7 +84,7 @@ fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
         "maxSubsegmentDuration",
         mpd.max_subsegment_duration.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &mpd.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &mpd.unknown_attributes)?;
 
     start_element(writer, "MPD", attributes)?;
     for pi in &mpd.program_informations {
@@ -147,7 +148,7 @@ fn emit_period<W: io::Write>(writer: &mut Writer<W>, period: &Period) -> Result<
         "bitstreamSwitching",
         period.bitstream_switching.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &period.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &period.unknown_attributes)?;
 
     start_element(writer, "Period", attributes)?;
     for base_url in &period.base_urls {
@@ -279,7 +280,7 @@ fn emit_adaptation_set<W: io::Write>(
         "initializationPrincipal",
         adaptation_set.initialization_principal.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &adaptation_set.base.unknown_attributes)?;
 
     start_element(writer, element_name, attributes)?;
     emit_representation_base_children(writer, &adaptation_set.base)?;
@@ -347,7 +348,7 @@ fn emit_representation<W: io::Write>(
         "mediaStreamStructureId",
         &representation.media_stream_structure_id,
     );
-    push_unknown_attributes(&mut attributes, &representation.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &representation.base.unknown_attributes)?;
 
     start_element(writer, "Representation", attributes)?;
     emit_representation_base_children(writer, &representation.base)?;
@@ -430,7 +431,7 @@ fn emit_program_information<W: io::Write>(
         "moreInformationURL",
         pi.more_information_url.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &pi.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &pi.unknown_attributes)?;
     start_element(writer, "ProgramInformation", attributes)?;
     if let Some(title) = &pi.title {
         start_element(writer, "Title", Vec::new())?;
@@ -482,7 +483,7 @@ fn emit_base_url<W: io::Write>(
     if base_url.range_access {
         push_attribute(&mut attributes, "rangeAccess", "true");
     }
-    push_unknown_attributes(&mut attributes, &base_url.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &base_url.unknown_attributes)?;
     start_element(writer, "BaseURL", attributes)?;
     writer.write_event(&Event::Text(base_url.url.clone()))?;
     writer.write_event(&Event::End)
@@ -496,7 +497,7 @@ fn emit_patch_location<W: io::Write>(
     if let Some(ttl) = patch.ttl {
         push_attribute(&mut attributes, "ttl", xs_double_lexical(ttl));
     }
-    push_unknown_attributes(&mut attributes, &patch.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &patch.unknown_attributes)?;
     start_element(writer, "PatchLocation", attributes)?;
     writer.write_event(&Event::Text(patch.url.clone()))?;
     writer.write_event(&Event::End)
@@ -508,7 +509,7 @@ fn emit_service_description<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_optional(&mut attributes, "id", sd.id.as_ref());
-    push_unknown_attributes(&mut attributes, &sd.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &sd.unknown_attributes)?;
     start_element(writer, "ServiceDescription", attributes)?;
     for scope in &sd.scopes {
         emit_descriptor(writer, scope, "Scope")?;
@@ -542,7 +543,7 @@ fn emit_latency<W: io::Write>(
     push_optional(&mut attributes, "target", latency.target.as_ref());
     push_optional(&mut attributes, "max", latency.max.as_ref());
     push_optional(&mut attributes, "min", latency.min.as_ref());
-    push_unknown_attributes(&mut attributes, &latency.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &latency.unknown_attributes)?;
     start_element(writer, "Latency", attributes)?;
     for quality_latency in &latency.quality_latencies {
         emit_uint_pairs_with_id(writer, quality_latency)?;
@@ -562,7 +563,7 @@ fn emit_playback_rate<W: io::Write>(
     if let Some(max) = rate.max {
         push_attribute(&mut attributes, "max", xs_double_lexical(max));
     }
-    push_unknown_attributes(&mut attributes, &rate.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &rate.unknown_attributes)?;
     start_element(writer, "PlaybackRate", attributes)?;
     writer.write_event(&Event::End)
 }
@@ -582,7 +583,7 @@ fn emit_operating_quality<W: io::Write>(
         "maxDifference",
         quality.max_difference.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &quality.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &quality.unknown_attributes)?;
     start_element(writer, "OperatingQuality", attributes)?;
     writer.write_event(&Event::End)
 }
@@ -596,7 +597,7 @@ fn emit_operating_bandwidth<W: io::Write>(
     push_optional(&mut attributes, "min", bw.min.as_ref());
     push_optional(&mut attributes, "max", bw.max.as_ref());
     push_optional(&mut attributes, "target", bw.target.as_ref());
-    push_unknown_attributes(&mut attributes, &bw.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &bw.unknown_attributes)?;
     start_element(writer, "OperatingBandwidth", attributes)?;
     writer.write_event(&Event::End)
 }
@@ -607,7 +608,7 @@ fn emit_uint_pairs_with_id<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_optional(&mut attributes, "type", pairs.value_type.as_ref());
-    push_unknown_attributes(&mut attributes, &pairs.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &pairs.unknown_attributes)?;
     start_element(writer, "QualityLatency", attributes)?;
     let pairs_str = pairs
         .pairs
@@ -628,7 +629,7 @@ fn emit_uint_v_with_id<W: io::Write>(
     push_attribute(&mut attributes, "id", v.id);
     push_optional(&mut attributes, "profiles", v.profiles.as_ref());
     push_optional(&mut attributes, "contentType", v.content_type.as_ref());
-    push_unknown_attributes(&mut attributes, &v.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &v.unknown_attributes)?;
     start_element(writer, tag, attributes)?;
     let values_str = v
         .values
@@ -646,7 +647,7 @@ fn emit_metrics<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_attribute(&mut attributes, "metrics", &metrics.metrics);
-    push_unknown_attributes(&mut attributes, &metrics.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &metrics.unknown_attributes)?;
     start_element(writer, "Metrics", attributes)?;
     for range in &metrics.ranges {
         emit_range(writer, range)?;
@@ -662,7 +663,7 @@ fn emit_range<W: io::Write>(writer: &mut Writer<W>, range: &crate::model::Range)
     let mut attributes = Vec::new();
     push_optional(&mut attributes, "starttime", range.starttime.as_ref());
     push_optional(&mut attributes, "duration", range.duration.as_ref());
-    push_unknown_attributes(&mut attributes, &range.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &range.unknown_attributes)?;
     start_element(writer, "Range", attributes)?;
     writer.write_event(&Event::End)
 }
@@ -695,7 +696,7 @@ fn emit_initialization_set<W: io::Write>(
         "initialization",
         init_set.initialization.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &init_set.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &init_set.base.unknown_attributes)?;
     start_element(writer, "InitializationSet", attributes)?;
     emit_representation_base_children(writer, &init_set.base)?;
     for accessibility in &init_set.accessibilities {
@@ -734,7 +735,7 @@ fn emit_leap_second_information<W: io::Write>(
         "nextLeapChangeTime",
         leap_sec.next_leap_change_time.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &leap_sec.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &leap_sec.unknown_attributes)?;
     start_element(writer, "LeapSecondInformation", attributes)?;
     emit_unknown_children(writer, &leap_sec.unknown_children)?;
     writer.write_event(&Event::End)
@@ -764,7 +765,7 @@ fn emit_segment_base<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_segment_base_attributes(&mut attributes, segment_base);
-    push_unknown_attributes(&mut attributes, &segment_base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &segment_base.unknown_attributes)?;
     start_element(writer, "SegmentBase", attributes)?;
     emit_segment_base_children(writer, segment_base)?;
     emit_unknown_children(writer, &segment_base.unknown_children)?;
@@ -777,7 +778,7 @@ fn emit_segment_list<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_multiple_segment_base_attributes(&mut attributes, &segment_list.base);
-    push_unknown_attributes(&mut attributes, &segment_list.base.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &segment_list.base.base.unknown_attributes)?;
     start_element(writer, "SegmentList", attributes)?;
     emit_multiple_segment_base_children(writer, &segment_list.base)?;
     for segment_url in &segment_list.segment_urls {
@@ -808,7 +809,7 @@ fn emit_segment_template<W: io::Write>(
     push_unknown_attributes(
         &mut attributes,
         &segment_template.base.base.unknown_attributes,
-    );
+    )?;
     start_element(writer, "SegmentTemplate", attributes)?;
     emit_multiple_segment_base_children(writer, &segment_template.base)?;
     emit_unknown_children(writer, &segment_template.base.base.unknown_children)?;
@@ -898,7 +899,7 @@ fn emit_url<W: io::Write>(writer: &mut Writer<W>, name: &str, url: &Url) -> Resu
     let mut attributes = Vec::new();
     push_optional(&mut attributes, "sourceURL", url.source_url.as_ref());
     push_optional(&mut attributes, "range", url.range.as_ref());
-    push_unknown_attributes(&mut attributes, &url.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &url.unknown_attributes)?;
     start_element(writer, name, attributes)?;
     emit_unknown_children(writer, &url.unknown_children)?;
     writer.write_event(&Event::End)
@@ -910,7 +911,7 @@ fn emit_failover_content<W: io::Write>(
 ) -> Result<()> {
     let mut attributes = Vec::new();
     push_optional(&mut attributes, "valid", failover_content.valid.as_ref());
-    push_unknown_attributes(&mut attributes, &failover_content.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &failover_content.unknown_attributes)?;
     start_element(writer, "FailoverContent", attributes)?;
     for fcs in &failover_content.fcs_entries {
         emit_fcs(writer, fcs)?;
@@ -923,7 +924,7 @@ fn emit_fcs<W: io::Write>(writer: &mut Writer<W>, fcs: &Fcs) -> Result<()> {
     let mut attributes = Vec::new();
     push_attribute(&mut attributes, "t", fcs.t);
     push_optional(&mut attributes, "d", fcs.d.as_ref());
-    push_unknown_attributes(&mut attributes, &fcs.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &fcs.unknown_attributes)?;
     start_element(writer, "FCS", attributes)?;
     emit_unknown_children(writer, &fcs.unknown_children)?;
     writer.write_event(&Event::End)
@@ -934,7 +935,7 @@ fn emit_segment_timeline<W: io::Write>(
     segment_timeline: &SegmentTimeline,
 ) -> Result<()> {
     let mut attributes = Vec::new();
-    push_unknown_attributes(&mut attributes, &segment_timeline.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &segment_timeline.unknown_attributes)?;
     start_element(writer, "SegmentTimeline", attributes)?;
     for segment in &segment_timeline.segments {
         emit_s(writer, segment)?;
@@ -950,7 +951,7 @@ fn emit_s<W: io::Write>(writer: &mut Writer<W>, segment: &S) -> Result<()> {
     push_attribute(&mut attributes, "d", segment.d);
     push_optional(&mut attributes, "r", segment.r.as_ref());
     push_optional(&mut attributes, "k", segment.k.as_ref());
-    push_unknown_attributes(&mut attributes, &segment.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &segment.unknown_attributes)?;
     start_element(writer, "S", attributes)?;
     emit_unknown_children(writer, &segment.unknown_children)?;
     writer.write_event(&Event::End)
@@ -970,7 +971,7 @@ fn emit_segment_url<W: io::Write>(writer: &mut Writer<W>, segment_url: &SegmentU
         "indexRange",
         segment_url.index_range.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &segment_url.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &segment_url.unknown_attributes)?;
     start_element(writer, "SegmentURL", attributes)?;
     emit_unknown_children(writer, &segment_url.unknown_children)?;
     writer.write_event(&Event::End)
@@ -1022,20 +1023,33 @@ fn push_representation_base_attributes(attributes: &mut Vec<Attribute>, base: &R
 
 fn emit_unknown_children<W: io::Write>(writer: &mut Writer<W>, children: &[Element]) -> Result<()> {
     for element in children {
-        emit_unknown_element(writer, element)?;
+        emit_unknown_element(writer, element, 0)?;
     }
     Ok(())
 }
 
-fn emit_unknown_element<W: io::Write>(writer: &mut Writer<W>, element: &Element) -> Result<()> {
+fn emit_unknown_element<W: io::Write>(
+    writer: &mut Writer<W>,
+    element: &Element,
+    depth: usize,
+) -> Result<()> {
+    if depth >= MAX_UNKNOWN_ELEMENT_DEPTH {
+        return Err(Error::new(ErrorKind::Xml(format!(
+            "unknown elements nested deeper than {MAX_UNKNOWN_ELEMENT_DEPTH}"
+        ))));
+    }
+    validate_xml_name(&element.name)?;
     let attributes = element
         .attributes
         .iter()
-        .map(|(name, value)| Attribute {
-            name: name.clone(),
-            value: value.clone(),
+        .map(|(name, value)| {
+            validate_xml_name(name)?;
+            Ok(Attribute {
+                name: name.clone(),
+                value: value.clone(),
+            })
         })
-        .collect();
+        .collect::<Result<_>>()?;
     writer.write_event(&Event::Start(StartElement {
         name: element.name.clone(),
         namespace: element.namespace.clone(),
@@ -1043,7 +1057,9 @@ fn emit_unknown_element<W: io::Write>(writer: &mut Writer<W>, element: &Element)
     }))?;
     for child in &element.children {
         match child {
-            Node::Element(child_element) => emit_unknown_element(writer, child_element)?,
+            Node::Element(child_element) => {
+                emit_unknown_element(writer, child_element, depth.saturating_add(1))?;
+            }
             Node::Text(text) => writer.write_event(&Event::Text(text.clone()))?,
         }
     }
@@ -1059,7 +1075,7 @@ fn emit_descriptor<W: io::Write>(
     push_attribute(&mut attributes, "schemeIdUri", &descriptor.scheme_id_uri);
     push_optional(&mut attributes, "value", descriptor.value.as_ref());
     push_optional(&mut attributes, "id", descriptor.id.as_ref());
-    push_unknown_attributes(&mut attributes, &descriptor.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &descriptor.unknown_attributes)?;
     start_element(writer, element_name, attributes)?;
     emit_unknown_children(writer, &descriptor.unknown_children)?;
     writer.write_event(&Event::End)
@@ -1088,7 +1104,7 @@ fn emit_content_protection<W: io::Write>(
     );
     push_optional(&mut attributes, "refId", content_protection.ref_id.as_ref());
     push_optional(&mut attributes, "ref", content_protection.r#ref.as_ref());
-    push_unknown_attributes(&mut attributes, &content_protection.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &content_protection.base.unknown_attributes)?;
     start_element(writer, "ContentProtection", attributes)?;
     emit_unknown_children(writer, &content_protection.base.unknown_children)?;
     writer.write_event(&Event::End)
@@ -1131,13 +1147,53 @@ fn push_list<T: fmt::Display>(attributes: &mut Vec<Attribute>, name: &str, value
     push_attribute(attributes, name, lexical);
 }
 
-fn push_unknown_attributes(attributes: &mut Vec<Attribute>, unknown: &[(String, String)]) {
+fn push_unknown_attributes(
+    attributes: &mut Vec<Attribute>,
+    unknown: &[(String, String)],
+) -> Result<()> {
     for (name, value) in unknown {
+        validate_xml_name(name)?;
         attributes.push(Attribute {
             name: name.clone(),
             value: value.clone(),
         });
     }
+    Ok(())
+}
+
+/// 未知ノードの名前は公開フィールド経由で任意の文字列を取り得るため、
+/// 書き出し前に XML 1.0 の Name 生成規則で検証する。素通しすると整形式
+/// でない XML を黙って生成し、再パースできない出力になる。既知要素・既知
+/// 属性の名前は静的文字列なので検証しない。
+fn validate_xml_name(name: &str) -> Result<()> {
+    let mut characters = name.chars();
+    let well_formed = match characters.next() {
+        Some(first) => is_name_start_char(first) && characters.all(is_name_char),
+        None => false,
+    };
+    if well_formed {
+        Ok(())
+    } else {
+        Err(invalid_value(name, "a well-formed XML name"))
+    }
+}
+
+// XML 1.0 5th edition の NameStartChar / NameChar の文字範囲そのまま。
+fn is_name_start_char(character: char) -> bool {
+    matches!(character,
+        ':' | '_' | 'A'..='Z' | 'a'..='z'
+        | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
+        | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}'
+        | '\u{200C}'..='\u{200D}' | '\u{2070}'..='\u{218F}'
+        | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}'
+        | '\u{F900}'..='\u{FDCF}' | '\u{FDF0}'..='\u{FFFD}'
+        | '\u{10000}'..='\u{EFFFF}')
+}
+
+fn is_name_char(character: char) -> bool {
+    is_name_start_char(character)
+        || matches!(character,
+            '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
 }
 
 fn xs_double_lexical(value: f64) -> String {
@@ -1196,7 +1252,7 @@ fn emit_event_stream<W: io::Write>(
         "xlink:actuate",
         event_stream.actuate.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &event_stream.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &event_stream.unknown_attributes)?;
 
     start_element(writer, element_name, attributes)?;
     for event in &event_stream.events {
@@ -1222,7 +1278,7 @@ fn emit_event<W: io::Write>(
         event.content_encoding.as_ref(),
     );
     push_optional(&mut attributes, "messageData", event.message_data.as_ref());
-    push_unknown_attributes(&mut attributes, &event.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &event.unknown_attributes)?;
 
     start_element(writer, "Event", attributes)?;
     if let Some(text) = &event.text_content {
@@ -1242,7 +1298,7 @@ fn emit_label<W: io::Write>(
         push_attribute(&mut attributes, "id", label.id);
     }
     push_optional(&mut attributes, "lang", label.lang.as_ref());
-    push_unknown_attributes(&mut attributes, &label.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &label.unknown_attributes)?;
 
     start_element(writer, element_name, attributes)?;
     writer.write_event(&Event::Text(label.text.clone()))?;
@@ -1256,7 +1312,7 @@ fn emit_subset<W: io::Write>(
     let mut attributes = Vec::new();
     push_list(&mut attributes, "contains", &subset.contains);
     push_optional(&mut attributes, "id", subset.id.as_ref());
-    push_unknown_attributes(&mut attributes, &subset.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &subset.unknown_attributes)?;
 
     start_element(writer, "Subset", attributes)?;
     writer.write_event(&Event::End)
@@ -1278,7 +1334,7 @@ fn emit_preselection<W: io::Write>(
     );
     push_optional(&mut attributes, "lang", preselection.lang.as_ref());
     push_attribute(&mut attributes, "order", preselection.order.to_string());
-    push_unknown_attributes(&mut attributes, &preselection.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &preselection.base.unknown_attributes)?;
 
     start_element(writer, "Preselection", attributes)?;
     emit_representation_base_children(writer, &preselection.base)?;
@@ -1309,7 +1365,7 @@ fn emit_switching<W: io::Write>(
         "type",
         switching.switching_type.to_string(),
     );
-    push_unknown_attributes(&mut attributes, &switching.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &switching.unknown_attributes)?;
 
     start_element(writer, "Switching", attributes)?;
     writer.write_event(&Event::End)
@@ -1336,7 +1392,7 @@ fn emit_random_access<W: io::Write>(
         "bandwidth",
         random_access.bandwidth.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &random_access.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &random_access.unknown_attributes)?;
 
     start_element(writer, "RandomAccess", attributes)?;
     writer.write_event(&Event::End)
@@ -1363,7 +1419,7 @@ fn emit_producer_reference_time<W: io::Write>(
     );
     push_attribute(&mut attributes, "wallClockTime", &prt.wall_clock_time);
     push_attribute(&mut attributes, "presentationTime", prt.presentation_time);
-    push_unknown_attributes(&mut attributes, &prt.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &prt.unknown_attributes)?;
 
     start_element(writer, "ProducerReferenceTime", attributes)?;
     if let Some(desc) = &prt.utc_timing {
@@ -1384,7 +1440,7 @@ fn emit_content_popularity_rate<W: io::Write>(
         "source_description",
         cpr.source_description.as_ref(),
     );
-    push_unknown_attributes(&mut attributes, &cpr.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &cpr.unknown_attributes)?;
 
     start_element(writer, "ContentPopularityRate", attributes)?;
     for pr in &cpr.rates {
@@ -1408,7 +1464,7 @@ fn emit_popularity_rate<W: io::Write>(
     if pr.r != 0 {
         push_attribute(&mut attributes, "r", pr.r);
     }
-    push_unknown_attributes(&mut attributes, &pr.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &pr.unknown_attributes)?;
 
     start_element(writer, "PR", attributes)?;
     writer.write_event(&Event::End)
@@ -1430,7 +1486,7 @@ fn emit_resync<W: io::Write>(
     if resync.marker {
         push_attribute(&mut attributes, "marker", "true");
     }
-    push_unknown_attributes(&mut attributes, &resync.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &resync.unknown_attributes)?;
 
     start_element(writer, "Resync", attributes)?;
     writer.write_event(&Event::End)
@@ -1446,7 +1502,7 @@ fn emit_content_component<W: io::Write>(
     push_optional(&mut attributes, "contentType", cc.content_type.as_ref());
     push_optional(&mut attributes, "par", cc.par.as_ref());
     push_optional(&mut attributes, "tag", cc.tag.as_ref());
-    push_unknown_attributes(&mut attributes, &cc.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &cc.unknown_attributes)?;
 
     start_element(writer, "ContentComponent", attributes)?;
     for desc in &cc.accessibilities {
@@ -1473,7 +1529,7 @@ fn emit_extended_bandwidth<W: io::Write>(
     if eb.vbr {
         push_attribute(&mut attributes, "vbr", "true");
     }
-    push_unknown_attributes(&mut attributes, &eb.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &eb.unknown_attributes)?;
 
     start_element(writer, "ExtendedBandwidth", attributes)?;
     for mp in &eb.model_pairs {
@@ -1490,7 +1546,7 @@ fn emit_model_pair<W: io::Write>(
     let mut attributes = Vec::new();
     push_attribute(&mut attributes, "bufferTime", mp.buffer_time);
     push_attribute(&mut attributes, "bandwidth", mp.bandwidth);
-    push_unknown_attributes(&mut attributes, &mp.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &mp.unknown_attributes)?;
 
     start_element(writer, "ModelPair", attributes)?;
     emit_unknown_children(writer, &mp.unknown_children)?;
@@ -1507,7 +1563,7 @@ fn emit_sub_representation<W: io::Write>(
     push_list(&mut attributes, "dependencyLevel", &sr.dependency_level);
     push_optional(&mut attributes, "bandwidth", sr.bandwidth.as_ref());
     push_list(&mut attributes, "contentComponent", &sr.content_component);
-    push_unknown_attributes(&mut attributes, &sr.base.unknown_attributes);
+    push_unknown_attributes(&mut attributes, &sr.base.unknown_attributes)?;
 
     start_element(writer, "SubRepresentation", attributes)?;
     emit_representation_base_children(writer, &sr.base)?;
@@ -1875,5 +1931,67 @@ mod tests {
             !output.contains("inf"),
             "must not emit Display form: {output}"
         );
+    }
+
+    fn minimal_hand_built_mpd() -> Mpd {
+        let mut mpd = Mpd::new(
+            "urn:mpeg:dash:profile:isoff-on-demand:2011",
+            "PT2S".parse::<XsDuration>().unwrap(),
+        );
+        mpd.periods.push(Period::new());
+        mpd
+    }
+
+    /// 公開フィールド経由で混入した整形式でない名前は、再パースできない
+    /// XML を黙って生成せず `InvalidValue` で拒否する。
+    #[test]
+    fn unknown_attribute_name_that_is_not_an_xml_name_is_rejected() {
+        let mut mpd = minimal_hand_built_mpd();
+        mpd.unknown_attributes
+            .push(("a b".to_string(), "v".to_string()));
+        let error = write_mpd(&mpd, Vec::new()).unwrap_err();
+        match error.kind {
+            ErrorKind::InvalidValue { value, .. } => assert_eq!(value, "a b"),
+            other => panic!("unexpected error kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_element_and_nested_attribute_names_are_validated() {
+        let mut mpd = minimal_hand_built_mpd();
+        mpd.unknown_children.push(Element::new("1bad"));
+        assert!(matches!(
+            write_mpd(&mpd, Vec::new()).unwrap_err().kind,
+            ErrorKind::InvalidValue { .. }
+        ));
+
+        let mut mpd = minimal_hand_built_mpd();
+        let mut child = Element::new("x:child");
+        child
+            .attributes
+            .push(("bad=name".to_string(), "v".to_string()));
+        let mut parent = Element::new("x:parent");
+        parent.children.push(Node::Element(child));
+        mpd.unknown_children.push(parent);
+        assert!(matches!(
+            write_mpd(&mpd, Vec::new()).unwrap_err().kind,
+            ErrorKind::InvalidValue { .. }
+        ));
+    }
+
+    /// 手組みの深い未知ツリーによるスタック溢れ（abort）を防ぐ。上限は
+    /// de 側の `MAX_UNKNOWN_ELEMENT_DEPTH` と共有する。
+    #[test]
+    fn unknown_tree_deeper_than_the_shared_limit_is_rejected() {
+        let mut element = Element::new("x:leaf");
+        for _ in 0..MAX_UNKNOWN_ELEMENT_DEPTH {
+            let mut parent = Element::new("x:nest");
+            parent.children.push(Node::Element(element));
+            element = parent;
+        }
+        let mut mpd = minimal_hand_built_mpd();
+        mpd.unknown_children.push(element);
+        let error = write_mpd(&mpd, Vec::new()).unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::Xml(_)));
     }
 }

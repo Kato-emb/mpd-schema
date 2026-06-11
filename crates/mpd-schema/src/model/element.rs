@@ -1,5 +1,11 @@
 //! Generic element tree that preserves unknown nodes.
 
+/// 未知サブツリーは de（読み）・ser（書き）とも再帰で処理するが、スキーマと
+/// 違って深さに上限がないため、信頼できない入力や手組みの深いツリーによる
+/// スタック溢れを防ぐ上限を両方向で共有する。実在の MPD の未知ツリーは
+/// 高々数段。
+pub(crate) const MAX_UNKNOWN_ELEMENT_DEPTH: usize = 256;
+
 /// An XML element with no schema definition, preserved as written.
 ///
 /// Every model struct carries a catch-all field of this type so that unknown

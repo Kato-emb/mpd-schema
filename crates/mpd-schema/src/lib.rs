@@ -100,7 +100,9 @@ impl Mpd {
     /// Returns an error if the input is not well-formed UTF-8 XML, the root
     /// element is not `MPD` in the DASH namespace, a required attribute is
     /// missing, or an attribute value does not conform to its lexical form.
-    /// [`Error::path`] identifies where in the document the failure occurred.
+    /// For attribute and element-structure errors, [`Error::path`] identifies
+    /// where in the document the failure occurred; other classes (malformed
+    /// XML, encoding) leave it empty.
     pub fn from_slice(bytes: &[u8]) -> Result<Mpd> {
         de::mpd_from_slice(bytes)
     }
@@ -135,9 +137,16 @@ impl Mpd {
 
     /// Serializes the document as UTF-8 XML into a writer.
     ///
+    /// The output is written without internal buffering: wrap raw `File` or
+    /// socket sinks in [`io::BufWriter`] to avoid one small write per XML
+    /// event.
+    ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::Io`] if writing to `writer` fails.
+    /// Returns [`ErrorKind::Io`] if writing to `writer` fails, and
+    /// [`ErrorKind::InvalidValue`] if an unknown attribute or element name
+    /// (set by hand through an `unknown_attributes` / `unknown_children`
+    /// field) is not a well-formed XML name.
     pub fn write_to<W: io::Write>(&self, writer: W) -> Result<()> {
         ser::write_mpd(self, writer)?;
         Ok(())
@@ -145,12 +154,94 @@ impl Mpd {
 }
 
 /// Serializes the document as UTF-8 XML, making `to_string` available.
+///
+/// Serialization into a `String` can fail only when a hand-built unknown
+/// attribute or element name is not a well-formed XML name. `fmt::Error`
+/// is returned in that case, which makes `to_string` / `format!` panic
+/// (standard library behavior); call [`Mpd::write_to`] to obtain the
+/// underlying [`Error`] instead.
 impl fmt::Display for Mpd {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Vec への書き込みは Io エラーを起こさず、ser が生成するイベント列は
-        // 常に整合するため、このエラー写像は実際には到達しない。
+        // Vec への書き込みで Io エラーは起き得ないため、ここで fmt::Error に
+        // 潰れるのは未知ノード名の検証エラーのみ（impl の doc に明記）。
         let bytes = ser::write_mpd(self, Vec::new()).map_err(|_| fmt::Error)?;
         let xml = String::from_utf8(bytes).map_err(|_| fmt::Error)?;
         formatter.write_str(&xml)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINIMAL: &str = concat!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+        r#"profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" minBufferTime="PT2S">"#,
+        "<Period/>",
+        "</MPD>",
+    );
+
+    #[test]
+    fn from_reader_write_to_roundtrip() {
+        let mpd = Mpd::from_reader(MINIMAL.as_bytes()).unwrap();
+        let mut output = Vec::new();
+        mpd.write_to(&mut output).unwrap();
+        let reparsed = Mpd::from_slice(&output).unwrap();
+        assert_eq!(mpd, reparsed);
+    }
+
+    /// `Display`（→ `to_string`）が `write_to` と同じ serializer を通り、
+    /// 検証可能な文書では失敗しないことを固定する。将来 ser にデータ依存の
+    /// エラー経路が増えて両者が乖離した場合、ここで検出する。
+    #[test]
+    fn to_string_matches_write_to_output() {
+        let mpd = Mpd::from_str(MINIMAL).unwrap();
+        let mut output = Vec::new();
+        mpd.write_to(&mut output).unwrap();
+        assert_eq!(mpd.to_string().as_bytes(), output.as_slice());
+    }
+
+    /// crate ルートの再エクスポート一覧が model.rs の一覧と同期している
+    /// ことを、両ファイルの `pub use` 文の突き合わせで検証する。model.rs
+    /// にだけ型を足すと `mpd_schema::X` が欠けたままコンパイルが通るため、
+    /// ドリフトはテストでしか検出できない。
+    #[test]
+    fn crate_root_reexports_stay_in_sync_with_model() {
+        let root = pub_use_entries(include_str!("lib.rs"), "model::");
+        let model = pub_use_entries(include_str!("model.rs"), "");
+        assert!(!root.is_empty());
+        assert_eq!(root, model);
+    }
+
+    /// `pub use <prefix><module>::{Name, ...};` 文から (module, Name) の
+    /// 組を列挙する。prefix に一致しない文（`error::` 等）は無視する。
+    fn pub_use_entries(source: &str, prefix: &str) -> Vec<(String, String)> {
+        let mut entries = Vec::new();
+        for part in source.split("pub use ").skip(1) {
+            let statement = part
+                .split(';')
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let Some(statement) = statement.strip_prefix(prefix) else {
+                continue;
+            };
+            let Some((module, names)) = statement.split_once("::{") else {
+                continue;
+            };
+            let Some(names) = names.strip_suffix('}') else {
+                continue;
+            };
+            for name in names.split(',') {
+                let name = name.trim();
+                if !name.is_empty() {
+                    entries.push((module.to_string(), name.to_string()));
+                }
+            }
+        }
+        entries.sort();
+        entries
     }
 }
