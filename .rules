@@ -22,6 +22,10 @@
 * 型付き子要素を追加または unknown から昇格する場合、型定義・deserialize 経路・serialize 経路を同じ変更で揃える。
 * unknown 要素・属性の保持テストでは、DASH schema に存在する名前を unknown 例に使わない。
 
+# 検証
+
+* `xmllint --schema` を fixtures の XSD に対して使う場合、`--nonet` を付け、`XML_CATALOG_FILES` でローカル XML catalog を指定する。外部 URL import をテスト実行中に取得してはいけない。
+
 # ルール規約
 これらの `.rules` ファイルは、全てのエージェントセッションで読み込まれる。常に**高シグナル**を維持すること。
 
