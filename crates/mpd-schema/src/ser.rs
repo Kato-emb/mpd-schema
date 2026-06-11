@@ -1815,7 +1815,7 @@ mod tests {
             "</ProducerReferenceTime>",
             r#"<ContentPopularityRate source="content"><PR popularityRate="50" r="-1"/></ContentPopularityRate>"#,
             r#"<Resync type="1" dImax="INF" dImin="0.5" marker="true"/>"#,
-            r#"<ContentComponent id="1" lang="en"><Role schemeIdUri="urn:role" value="main"/></ContentComponent>"#,
+            r#"<ContentComponent id="1" lang="en" contentType="video"><Role schemeIdUri="urn:role" value="main"/></ContentComponent>"#,
             r#"<Representation id="v0" bandwidth="1000">"#,
             r#"<ExtendedBandwidth vbr="true"><ModelPair bufferTime="PT1S" bandwidth="500"/></ExtendedBandwidth>"#,
             r#"<SubRepresentation level="0" bandwidth="800"/>"#,

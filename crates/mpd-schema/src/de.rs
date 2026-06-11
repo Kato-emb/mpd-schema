@@ -2060,8 +2060,13 @@ impl Deserializer<'_> {
             }
         }
 
-        // `EventType` is `mixed="true"`: collect both the text content and any
-        // child elements (modeled as unknown children) in document order.
+        // `EventType` is `mixed="true"`. The model keeps the text content and
+        // the child elements in separate fields, so text chunks interleaved
+        // between child elements are concatenated and the serializer re-emits
+        // all text before the children. A document that alternates text and
+        // elements therefore round-trips to an equivalent model but not to a
+        // byte-identical document; no real-world Event payload relies on that
+        // interleaving.
         let mut text = String::new();
         loop {
             match self.reader.read_event()? {
@@ -2391,7 +2396,10 @@ impl Deserializer<'_> {
                         Some(self.in_attribute("id", parse_xs_unsigned_int(&attribute.value))?);
                 }
                 "lang" => content_component.lang = Some(attribute.value),
-                "contentType" => content_component.content_type = Some(attribute.value),
+                "contentType" => {
+                    content_component.content_type =
+                        Some(self.parse_attribute("contentType", &attribute.value)?);
+                }
                 "par" => {
                     content_component.par = Some(self.parse_attribute("par", &attribute.value)?)
                 }
@@ -2532,7 +2540,11 @@ impl Deserializer<'_> {
                 continue;
             };
             match attribute.name.as_str() {
-                "id" => id = Some(attribute.value),
+                "id" => {
+                    id = Some(
+                        self.in_attribute("id", parse_string_no_whitespace(&attribute.value))?,
+                    );
+                }
                 "preselectionComponents" => {
                     preselection_components = Some(parse_string_vector(&attribute.value));
                 }

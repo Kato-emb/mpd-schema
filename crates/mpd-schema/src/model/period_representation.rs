@@ -13,7 +13,7 @@ use std::str::FromStr;
 use crate::error::Error;
 use crate::model::descriptor::Descriptor;
 use crate::model::element::Element;
-use crate::model::mpd::RepresentationBase;
+use crate::model::mpd::{ContentType, RepresentationBase};
 use crate::model::types::{Sap, XsDuration, invalid_value};
 
 /// An `EventStream` element (XSD `EventStreamType`).
@@ -29,8 +29,17 @@ pub struct EventStream {
     /// The `presentationTimeOffset` attribute.
     pub presentation_time_offset: u64,
     /// The `xlink:href` attribute.
+    ///
+    /// Serialized with the `xlink:` prefix. The serializer does not emit an
+    /// `xmlns:xlink` declaration: a parsed document carries the caller's
+    /// original declaration through `unknown_attributes`, but a hand-built
+    /// model that sets this field must also declare the `xlink` namespace
+    /// (e.g. as an unknown attribute on the `MPD`) for the output to be
+    /// namespace-valid.
     pub href: Option<String>,
     /// The `xlink:actuate` attribute (default: "onRequest").
+    ///
+    /// Carries the same `xmlns:xlink` declaration caveat as [`Self::href`].
     pub actuate: Option<String>,
     /// The `Event` children.
     pub events: Vec<Event>,
@@ -709,7 +718,7 @@ pub struct ContentComponent {
     /// The `lang` attribute.
     pub lang: Option<String>,
     /// The `contentType` attribute.
-    pub content_type: Option<String>,
+    pub content_type: Option<ContentType>,
     /// The `par` attribute.
     pub par: Option<crate::model::types::Ratio>,
     /// The `tag` attribute.
