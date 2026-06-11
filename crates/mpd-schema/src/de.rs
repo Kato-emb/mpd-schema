@@ -199,14 +199,7 @@ impl Deserializer<'_> {
                     &mut mpd.locations,
                     "Location",
                     child,
-                    |parser, child| {
-                        for attribute in &child.attributes {
-                            if attribute.name == "xmlns" {
-                                parser.check_default_namespace_declaration(&attribute.value)?;
-                            }
-                        }
-                        parser.parse_text_content()
-                    },
+                    Self::parse_location,
                 )?;
             } else if child.matches(MPD_NAMESPACE, "PatchLocation") {
                 self.parse_repeated_child(
@@ -276,16 +269,12 @@ impl Deserializer<'_> {
                     Self::parse_descriptor,
                 )?;
             } else if child.matches(MPD_NAMESPACE, "LeapSecondInformation") {
-                if mpd.leap_second_information.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                self.path.push(PathSegment {
-                    element_name: "LeapSecondInformation",
-                    sibling_index: None,
-                });
-                let leap_second = self.parse_leap_second_information(child)?;
-                self.path.pop();
-                mpd.leap_second_information = Some(leap_second);
+                self.parse_singular_child(
+                    &mut mpd.leap_second_information,
+                    "LeapSecondInformation",
+                    child,
+                    Self::parse_leap_second_information,
+                )?;
             } else {
                 mpd.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -722,20 +711,20 @@ impl Deserializer<'_> {
 
         while let Some(child) = self.next_content_event()? {
             if child.matches(MPD_NAMESPACE, "Title") {
-                if pi.title.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.title = Some(self.parse_text_content()?);
+                self.parse_singular_child(&mut pi.title, "Title", child, |parser, _child| {
+                    parser.parse_text_content()
+                })?;
             } else if child.matches(MPD_NAMESPACE, "Source") {
-                if pi.source.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.source = Some(self.parse_text_content()?);
+                self.parse_singular_child(&mut pi.source, "Source", child, |parser, _child| {
+                    parser.parse_text_content()
+                })?;
             } else if child.matches(MPD_NAMESPACE, "Copyright") {
-                if pi.copyright.is_some() {
-                    return Err(self.duplicate_element(child.name));
-                }
-                pi.copyright = Some(self.parse_text_content()?);
+                self.parse_singular_child(
+                    &mut pi.copyright,
+                    "Copyright",
+                    child,
+                    |parser, _child| parser.parse_text_content(),
+                )?;
             } else {
                 pi.unknown_children
                     .push(self.parse_unknown_element(child, 0)?);
@@ -803,6 +792,15 @@ impl Deserializer<'_> {
         let url = self.parse_text_content()?;
         patch.url = url;
         Ok(patch)
+    }
+
+    fn parse_location(&mut self, start: StartElement) -> Result<String> {
+        for attribute in &start.attributes {
+            if attribute.name == "xmlns" {
+                self.check_default_namespace_declaration(&attribute.value)?;
+            }
+        }
+        self.parse_text_content()
     }
 
     fn parse_range(&mut self, start: StartElement) -> Result<crate::model::Range> {
@@ -1490,6 +1488,7 @@ impl Deserializer<'_> {
         child: StartElement,
         parse: impl FnOnce(&mut Self, StartElement) -> Result<T>,
     ) -> Result<()> {
+        debug_assert!(child.matches(MPD_NAMESPACE, element_name));
         if slot.is_some() {
             return Err(self.duplicate_element(child.name));
         }
@@ -1510,6 +1509,7 @@ impl Deserializer<'_> {
         child: StartElement,
         parse: impl FnOnce(&mut Self, StartElement) -> Result<T>,
     ) -> Result<()> {
+        debug_assert!(child.matches(MPD_NAMESPACE, element_name));
         self.path.push(PathSegment {
             element_name,
             sibling_index: Some(collection.len()),
