@@ -143,10 +143,11 @@ impl Mpd {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::Io`] if writing to `writer` fails, and
+    /// Returns [`ErrorKind::Io`] if writing to `writer` fails,
     /// [`ErrorKind::InvalidValue`] if an unknown attribute or element name
     /// (set by hand through an `unknown_attributes` / `unknown_children`
-    /// field) is not a well-formed XML name.
+    /// field) is not a well-formed XML name, and [`ErrorKind::Xml`] if
+    /// unknown elements are nested deeper than the shared depth limit.
     pub fn write_to<W: io::Write>(&self, writer: W) -> Result<()> {
         ser::write_mpd(self, writer)?;
         Ok(())
@@ -155,15 +156,17 @@ impl Mpd {
 
 /// Serializes the document as UTF-8 XML, making `to_string` available.
 ///
-/// Serialization into a `String` can fail only when a hand-built unknown
-/// attribute or element name is not a well-formed XML name. `fmt::Error`
-/// is returned in that case, which makes `to_string` / `format!` panic
-/// (standard library behavior); call [`Mpd::write_to`] to obtain the
-/// underlying [`Error`] instead.
+/// Serialization into a `String` can fail only when the document contains
+/// hand-built unknown nodes whose names are not well-formed XML names or
+/// whose nesting exceeds the shared depth limit. `fmt::Error` is returned
+/// in those cases, which makes `to_string` / `format!` panic (standard
+/// library behavior); call [`Mpd::write_to`] to obtain the underlying
+/// [`Error`] instead.
 impl fmt::Display for Mpd {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Vec への書き込みで Io エラーは起き得ないため、ここで fmt::Error に
-        // 潰れるのは未知ノード名の検証エラーのみ（impl の doc に明記）。
+        // 潰れるのは未知ノードの検証エラー（名前・深度）のみ（impl の doc に
+        // 明記）。
         let bytes = ser::write_mpd(self, Vec::new()).map_err(|_| fmt::Error)?;
         let xml = String::from_utf8(bytes).map_err(|_| fmt::Error)?;
         formatter.write_str(&xml)
@@ -213,6 +216,12 @@ mod tests {
         assert_eq!(root, model);
     }
 
+    #[test]
+    #[should_panic(expected = "brace なしの pub use")]
+    fn braceless_pub_use_is_detected_as_drift_risk() {
+        pub_use_entries("pub use segment::Foo;", "");
+    }
+
     /// `pub use <prefix><module>::{Name, ...};` 文から (module, Name) の
     /// 組を列挙する。prefix に一致しない文（`error::` 等）は無視する。
     fn pub_use_entries(source: &str, prefix: &str) -> Vec<(String, String)> {
@@ -228,6 +237,13 @@ mod tests {
             let Some(statement) = statement.strip_prefix(prefix) else {
                 continue;
             };
+            // brace なしの `pub use foo::Bar;` は下の解析から漏れ、片側の
+            // 一覧にだけ存在してもドリフトとして検出されないため、ここで
+            // 落とす。
+            assert!(
+                !statement.contains("::") || statement.contains("::{"),
+                "brace なしの pub use を検出: `pub use {statement};` — brace 形式に統一する"
+            );
             let Some((module, names)) = statement.split_once("::{") else {
                 continue;
             };
