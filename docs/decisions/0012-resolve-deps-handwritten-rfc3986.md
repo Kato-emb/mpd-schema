@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-06-11
+date: 2026-06-12
 decision-makers: r-kato
 ---
 # mpd-resolve の依存は mpd-schema のみとし、RFC 3986 参照解決を自前実装する
@@ -24,7 +24,7 @@ mpd-schema は quick-xml + chrono のみ・proc-macro なし・WASM ビルド可
 
 ## Decision Outcome
 
-Chosen option: 「自前実装」。依存は `mpd-schema`（path + version 指定）のみ。chrono は v1（static のみ、ADR-0009）では不要で、dynamic 対応の着手時に再検討する。
+Chosen option: 「自前実装」。依存は `mpd-schema`（path + version 指定）のみ。chrono は直接依存にしない — dynamic の可用ウィンドウ計算（ADR-0009）は now を `std::time::SystemTime` で受け、`availabilityStartTime`（`XsDateTime`）との演算はエポック基準の整数演算に落とす。
 
 実装範囲は §5.2 の参照解決（merge / remove_dot_segments）と Appendix B の5成分分解に限る。URL の妥当性検証・正規化（パーセントエンコード、IDNA 等）はしない — 入力の字句をそのまま合成する。基底が相対参照の場合（文書 URL 未提供）は §5.2 のパスマージを相対基底に準用し、結果を相対参照のまま返す（RFC 3986 は絶対基底を前提とするため、この準用は RFC の定義域外であることを doc に明記する）。
 

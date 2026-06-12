@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-06-11
+date: 2026-06-12
 decision-makers: r-kato
 ---
 # mpd-resolve は独立した Error 型を持ち、列挙の構築時に fail-fast する
@@ -40,10 +40,12 @@ pub struct Error {
 
 * 未知のテンプレート識別子、不正な書式タグ、対応の取れない `$`
 * addressing mode 不整合: 実効レベルでの複数 mode 競合、`$Time$` 使用かつ `SegmentTimeline` 不在、number ベース導出で `@duration` 不在
-* `S@r="-1"` で Period 終端が導出不能（`Period@duration` も `MPD@mediaPresentationDuration` も無い等）
+* `S@r="-1"` で展開の打ち切り点が導出不能: static では Period 終端（`Period@duration` も `MPD@mediaPresentationDuration` も無い等）。dynamic では可用ウィンドウ終端を now から導出するため、これ自体は正常系（ADR-0009）
 * byte range（`indexRange` / `mediaRange` 等）の字句不正
 * timescale 換算・時刻演算の u64 オーバーフロー
-* `MPD@type="dynamic"`（ADR-0009）
+* `MPD@type="dynamic"` の文書を static 用エントリポイントに渡した（dynamic は now を取るエントリポイントで扱う、ADR-0009）
+* dynamic の解決で `MPD@availabilityStartTime` が欠落、またはタイムゾーン無し（`XsDateTime::Unzoned`。now との減算が定義できない）
+* dynamic の解決で `@availabilityTimeOffset`（`BaseURL` 上を含む）または `@availabilityTimeComplete="false"` に遭遇（v1 は低レイテンシ未対応、ADR-0009）
 * (period, adaptation_set, representation) 指定の範囲外
 
 `timescale` の欠落はエラーではない（23009-1 規定の既定値 1 を適用する）。
