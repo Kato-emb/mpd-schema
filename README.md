@@ -69,7 +69,17 @@ assert!(xml.starts_with(r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011""#));
 `Mpd::from_slice` / `Mpd::from_reader` and `Mpd::write_to` are available for
 byte and `io` based input/output.
 
+`Mpd::to_string_pretty` / `Mpd::write_to_pretty` emit indented, human-readable
+XML for debugging. The default `to_string` / `write_to` stay compact; the
+indented form trades round-trip fidelity for readability.
+
 Input must be UTF-8; other encodings are rejected.
+
+## Examples
+
+Runnable examples for both crates live in [`examples/`](examples/) — building a
+document, round-tripping one while preserving unknown nodes, and resolving
+segment URLs. See [`examples/README.md`](examples/README.md).
 
 ## Minimum supported Rust version
 

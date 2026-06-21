@@ -173,6 +173,14 @@ impl<W: io::Write> Writer<W> {
         }
     }
 
+    /// Creates a writer that indents each element by `spaces` spaces per level.
+    pub(crate) fn new_with_indent(sink: W, spaces: usize) -> Self {
+        Self {
+            inner: quick_xml::Writer::new_with_indent(sink, b' ', spaces),
+            open_element_names: Vec::new(),
+        }
+    }
+
     /// Writes one event. Text and attribute values are escaped here;
     /// [`Event::Eof`] is a no-op.
     pub(crate) fn write_event(&mut self, event: &Event) -> Result<()> {
