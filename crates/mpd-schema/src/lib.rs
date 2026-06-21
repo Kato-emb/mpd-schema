@@ -176,11 +176,14 @@ impl Mpd {
     ///
     /// # Errors
     ///
-    /// Same as [`Mpd::write_to`].
+    /// The serialization errors of [`Mpd::write_to`] (other than
+    /// [`ErrorKind::Io`], which cannot arise when writing to a `String`), plus
+    /// [`ErrorKind::Encoding`] in the unreachable case that the serialized
+    /// bytes are not UTF-8.
     pub fn to_string_pretty(&self) -> Result<String> {
         let bytes = ser::write_mpd_indented(self, Vec::new(), PRETTY_INDENT_SPACES)?;
         String::from_utf8(bytes).map_err(|source| {
-            Error::new(ErrorKind::Xml(format!(
+            Error::new(ErrorKind::Encoding(format!(
                 "serialized output is not UTF-8: {source}"
             )))
         })

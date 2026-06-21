@@ -83,12 +83,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         };
 
-        let mut count = 0;
-        for segment in segments.take(MAX_SEGMENTS) {
-            println!("  {}", describe(&segment));
-            count += 1;
+        // Take one past the limit so an exactly-MAX_SEGMENTS representation is
+        // not mistaken for a truncated one.
+        let shown: Vec<_> = segments.take(MAX_SEGMENTS + 1).collect();
+        for segment in shown.iter().take(MAX_SEGMENTS) {
+            println!("  {}", describe(segment));
         }
-        if count == MAX_SEGMENTS {
+        if shown.len() > MAX_SEGMENTS {
             println!("  ... (showing first {MAX_SEGMENTS})");
         }
     }
