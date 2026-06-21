@@ -7,9 +7,11 @@
 //! step runs on Windows without bash, curl, or sha256sum.
 
 use std::error::Error;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
@@ -127,6 +129,15 @@ fn extract_strip_one(tarball: &[u8], staging: &Path) -> Result<(), Box<dyn Error
         if stripped.as_os_str().is_empty() {
             continue;
         }
+        // `Entry::unpack` does no containment check, and `stripped` still carries
+        // any `..` the archive put there; reject anything but plain names so a
+        // swapped tarball cannot escape the staging tree (zip-slip).
+        if stripped
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(format!("tar entry escapes staging: {}", path.display()).into());
+        }
         entry.unpack(staging.join(stripped))?;
     }
     Ok(())
@@ -153,12 +164,17 @@ fn fetch_pinned(url: &str, sha256: &str, target: &Path) -> Result<(), Box<dyn Er
 
 fn fetch_bytes(url: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut last_error: Option<Box<dyn Error>> = None;
-    for attempt in 1..=3 {
+    for attempt in 1u64..=3 {
         match try_fetch(url) {
             Ok(bytes) => return Ok(bytes),
             Err(error) => {
                 eprintln!("attempt {attempt}/3 failed: {error}");
                 last_error = Some(error);
+                // Back off between attempts (1s, 2s) so a transient stall or
+                // short rate-limit can clear, like `curl --retry`.
+                if attempt < 3 {
+                    std::thread::sleep(Duration::from_secs(attempt));
+                }
             }
         }
     }
@@ -185,7 +201,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
-        hex.push_str(&format!("{byte:02x}"));
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
