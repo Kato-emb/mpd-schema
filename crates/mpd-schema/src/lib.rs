@@ -152,7 +152,46 @@ impl Mpd {
         ser::write_mpd(self, writer)?;
         Ok(())
     }
+
+    /// Serializes the document as indented, human-readable UTF-8 XML.
+    ///
+    /// This is a debugging aid: elements are placed on their own lines and
+    /// indented two spaces per level. Unlike [`Mpd::write_to`], the output is
+    /// not guaranteed to round-trip to an equivalent document — the inserted
+    /// whitespace becomes text content of elements that hold none of their
+    /// own. Use [`Mpd::write_to`] when the output will be parsed again.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Mpd::write_to`].
+    pub fn write_to_pretty<W: io::Write>(&self, writer: W) -> Result<()> {
+        ser::write_mpd_indented(self, writer, PRETTY_INDENT_SPACES)?;
+        Ok(())
+    }
+
+    /// Serializes the document as an indented, human-readable XML string.
+    ///
+    /// The string counterpart of [`Mpd::write_to_pretty`]; the same
+    /// round-trip caveat applies.
+    ///
+    /// # Errors
+    ///
+    /// The serialization errors of [`Mpd::write_to`] (other than
+    /// [`ErrorKind::Io`], which cannot arise when writing to a `String`), plus
+    /// [`ErrorKind::Encoding`] in the unreachable case that the serialized
+    /// bytes are not UTF-8.
+    pub fn to_string_pretty(&self) -> Result<String> {
+        let bytes = ser::write_mpd_indented(self, Vec::new(), PRETTY_INDENT_SPACES)?;
+        String::from_utf8(bytes).map_err(|source| {
+            Error::new(ErrorKind::Encoding(format!(
+                "serialized output is not UTF-8: {source}"
+            )))
+        })
+    }
 }
+
+/// Spaces per nesting level used by the pretty serializers.
+const PRETTY_INDENT_SPACES: usize = 2;
 
 /// Serializes the document as UTF-8 XML, making `to_string` available.
 ///
@@ -202,6 +241,28 @@ mod tests {
         let mut output = Vec::new();
         mpd.write_to(&mut output).unwrap();
         assert_eq!(mpd.to_string().as_bytes(), output.as_slice());
+    }
+
+    /// pretty serializer がネストにインデントを与えつつ、葉要素のテキストを
+    /// 無改変で1行に保つ（空白注入で text を壊さない）ことを固定する。
+    #[test]
+    fn pretty_indents_and_preserves_leaf_text() {
+        const XML: &str = concat!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" "#,
+            r#"profiles="p" minBufferTime="PT2S">"#,
+            "<BaseURL>https://cdn.example.com/base/</BaseURL>",
+            "<Period/>",
+            "</MPD>",
+        );
+        let mpd = Mpd::from_str(XML).unwrap();
+        let pretty = mpd.to_string_pretty().unwrap();
+
+        assert!(pretty.contains("\n  <BaseURL>"));
+        assert!(pretty.contains("<BaseURL>https://cdn.example.com/base/</BaseURL>"));
+
+        let mut bytes = Vec::new();
+        mpd.write_to_pretty(&mut bytes).unwrap();
+        assert_eq!(pretty.as_bytes(), bytes.as_slice());
     }
 
     /// crate ルートの再エクスポート一覧が model.rs の一覧と同期している

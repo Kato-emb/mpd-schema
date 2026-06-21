@@ -27,6 +27,12 @@ pub(crate) fn write_mpd<W: io::Write>(mpd: &Mpd, sink: W) -> Result<W> {
     Ok(writer.into_inner())
 }
 
+pub(crate) fn write_mpd_indented<W: io::Write>(mpd: &Mpd, sink: W, spaces: usize) -> Result<W> {
+    let mut writer = Writer::new_with_indent(sink, spaces);
+    emit_mpd(&mut writer, mpd)?;
+    Ok(writer.into_inner())
+}
+
 fn emit_mpd<W: io::Write>(writer: &mut Writer<W>, mpd: &Mpd) -> Result<()> {
     let mut attributes = Vec::new();
     // パース時に既定名前空間宣言を保持しない方針（de.rs 参照）の対であり、

@@ -1,0 +1,31 @@
+[package]
+name = "examples"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Runnable usage examples for mpd-schema and mpd-resolve"
+
+# The workspace lints enforce a panic-free / no-stdout posture meant for the
+# libraries. Examples are teaching code: they print results and favour `?` over
+# defensive handling, so they deliberately do not inherit `[workspace.lints]`.
+
+[dependencies]
+mpd-schema = { workspace = true }
+mpd-resolve = { workspace = true }
+
+# The example sources sit at the crate root rather than under `examples/`, so
+# each is declared explicitly instead of relying on auto-discovery.
+[[example]]
+name = "schema_build"
+path = "schema_build.rs"
+
+[[example]]
+name = "schema_roundtrip"
+path = "schema_roundtrip.rs"
+
+[[example]]
+name = "resolve_segments"
+path = "resolve_segments.rs"
