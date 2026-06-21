@@ -1,7 +1,7 @@
 //! `DASHSchema` サンプルと DASH-IF テストベクタに対する検証ハーネス。
 //!
-//! fixtures は再配布不可のため git 管理外で、`scripts/fetch-fixtures.sh` が
-//! 取得する（ADR-0004）。未取得の場合、各テストはスクリプトの実行を促して
+//! fixtures は再配布不可のため git 管理外で、`cargo xtask fetch-fixtures` が
+//! 取得する（ADR-0004）。未取得の場合、各テストはコマンドの実行を促して
 //! fail する。
 
 #![allow(
@@ -22,7 +22,7 @@ fn fixture_dir(name: &str) -> PathBuf {
         .join(name);
     assert!(
         dir.is_dir(),
-        "fixtures が見つからない（{}）: `./scripts/fetch-fixtures.sh` を実行してから再実行する",
+        "fixtures が見つからない（{}）: `cargo xtask fetch-fixtures` を実行してから再実行する",
         dir.display()
     );
     dir
@@ -32,13 +32,13 @@ fn file_name(path: &Path) -> &str {
     path.file_name().unwrap().to_str().unwrap()
 }
 
-/// fixture ファイルを読む。`scripts/fetch-fixtures.sh` が dashif / w3c を
+/// fixture ファイルを読む。`cargo xtask fetch-fixtures` が dashif / w3c を
 /// 空ディレクトリだけ作って download に失敗した場合、`fixture_dir` の
 /// `is_dir()` は通ってしまうので、ファイル単位の読みでも取得手順を促す。
 fn read_fixture(path: &Path) -> Vec<u8> {
     fs::read(path).unwrap_or_else(|error| {
         panic!(
-            "fixture が読めない（{}）: {error}\n`./scripts/fetch-fixtures.sh` を実行してから再実行する",
+            "fixture が読めない（{}）: {error}\n`cargo xtask fetch-fixtures` を実行してから再実行する",
             path.display()
         )
     })
@@ -151,7 +151,7 @@ fn xmllint_validate(schema: &Path, name: &str, document: &[u8]) -> Result<(), St
     let catalog = fixture_dir("w3c").join("catalog.xml");
     assert!(
         catalog.is_file(),
-        "XML カタログが無い（{}）: `./scripts/fetch-fixtures.sh` を実行してから再実行する",
+        "XML カタログが無い（{}）: `cargo xtask fetch-fixtures` を実行してから再実行する",
         catalog.display()
     );
     // ドキュメントは一時ファイル経由で渡す。stdin パイプだと、xmllint が

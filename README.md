@@ -83,7 +83,7 @@ repository or the published crate. Fetch them once per checkout before
 running tests:
 
 ```sh
-./scripts/fetch-fixtures.sh
+cargo xtask fetch-fixtures
 cargo test
 ```
 

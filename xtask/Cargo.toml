@@ -1,0 +1,16 @@
+# Development automation runnable as `cargo xtask <command>` (see
+# .cargo/config.toml). Not published, and not part of the library; it does not
+# inherit the workspace's panic-free / overflow-checked restriction lints, which
+# are inappropriate for a one-shot fetch tool.
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ureq = "2"
+sha2 = "0.10"
+flate2 = "1"
+tar = "0.4"
