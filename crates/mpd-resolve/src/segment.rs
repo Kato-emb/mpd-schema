@@ -73,10 +73,8 @@ impl ByteRange {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::InvalidBaseUrl`] reusing the value-carrying shape
-    /// when the text is not a valid byte range. The `path` is supplied by the
-    /// caller via [`Error::new`] on the returned error's replacement; here the
-    /// error carries an empty path.
+    /// Returns [`ErrorKind::InconsistentSegmentInfo`] with `path` set to the
+    /// caller-supplied location when the text is not a valid byte range.
     pub(crate) fn parse(text: &str, path: &str) -> Result<Self, Error> {
         let malformed = || {
             Error::new(
@@ -104,7 +102,8 @@ impl ByteRange {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SegmentTime {
-    /// The start time in `timescale` ticks, relative to the period start.
+    /// The start time in `timescale` ticks on the media timeline. This is the
+    /// value `$Time$` substitutes and includes `presentationTimeOffset`.
     pub start: u64,
     /// The duration in `timescale` ticks.
     pub duration: u64,

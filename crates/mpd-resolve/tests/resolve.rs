@@ -408,3 +408,97 @@ fn segment_inheritance_merges_attributes_down_levels() {
     assert_eq!(primary(&segments[0]), "https://cdn.example.com/v0/1.m4s");
     assert_eq!(segments[0].time.unwrap().timescale, 1_000);
 }
+
+#[test]
+fn segment_timeline_honors_explicit_segment_number() {
+    const XML: &str = r#"<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="p" minBufferTime="PT2S" type="static">
+  <BaseURL>https://cdn.example.com/</BaseURL>
+  <Period duration="PT3S">
+    <AdaptationSet>
+      <SegmentTemplate media="$Number$.m4s" timescale="1000">
+        <SegmentTimeline>
+          <S t="0" d="1000" n="100" r="1"/>
+          <S d="1000"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v0" bandwidth="1"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+
+    let mpd = Mpd::from_slice(XML.as_bytes()).unwrap();
+    let resolver = Resolver::new(&mpd, "https://example.com/m.mpd").unwrap();
+    let handles = resolver.representations();
+    let segments: Vec<_> = resolver.segments(&handles[0]).unwrap().collect();
+
+    let numbers: Vec<u64> = segments.iter().map(|s| s.number.unwrap()).collect();
+    assert_eq!(numbers, vec![100, 101, 102]); // @n seeds the run, then continues
+    assert_eq!(primary(&segments[0]), "https://cdn.example.com/100.m4s");
+    assert_eq!(primary(&segments[2]), "https://cdn.example.com/102.m4s");
+}
+
+#[test]
+fn static_multi_period_untimed_period_is_bounded() {
+    // The second Period has no @duration; its length is the presentation
+    // duration minus its start. It must not yield an infinite sequence.
+    const XML: &str = r#"<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="p" minBufferTime="PT2S" type="static" mediaPresentationDuration="PT4S">
+  <BaseURL>https://cdn.example.com/</BaseURL>
+  <Period id="a" start="PT0S" duration="PT2S">
+    <AdaptationSet>
+      <SegmentTemplate media="a/$Number$.m4s" duration="1000" timescale="1000"/>
+      <Representation id="v0" bandwidth="1"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="b" start="PT2S">
+    <AdaptationSet>
+      <SegmentTemplate media="b/$Number$.m4s" duration="1000" timescale="1000"/>
+      <Representation id="v0" bandwidth="1"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+
+    let mpd = Mpd::from_slice(XML.as_bytes()).unwrap();
+    let resolver = Resolver::new(&mpd, "https://example.com/m.mpd").unwrap();
+    let handles = resolver.representations();
+
+    let first: Vec<_> = resolver.segments(&handles[0]).unwrap().collect();
+    assert_eq!(first.len(), 2); // bounded by @duration PT2S
+
+    let second: Vec<_> = resolver.segments(&handles[1]).unwrap().collect();
+    assert_eq!(second.len(), 2); // PT4S - PT2S start = PT2S
+    assert_eq!(primary(&second[0]), "https://cdn.example.com/b/1.m4s");
+}
+
+#[test]
+fn presentation_time_offset_shifts_the_timeline_and_its_boundary() {
+    // pto and @t live on the media timeline; an r=-1 tail bounds against
+    // pto + periodLength, not the bare length.
+    const XML: &str = r#"<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"
+     profiles="p" minBufferTime="PT2S" type="static">
+  <BaseURL>https://cdn.example.com/</BaseURL>
+  <Period duration="PT4S">
+    <AdaptationSet>
+      <SegmentTemplate media="$Time$.m4s" timescale="1000" presentationTimeOffset="10000">
+        <SegmentTimeline>
+          <S t="10000" d="1000" r="-1"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v0" bandwidth="1"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+
+    let mpd = Mpd::from_slice(XML.as_bytes()).unwrap();
+    let resolver = Resolver::new(&mpd, "https://example.com/m.mpd").unwrap();
+    let handles = resolver.representations();
+    let segments: Vec<_> = resolver.segments(&handles[0]).unwrap().collect();
+
+    let times: Vec<u64> = segments.iter().map(|s| s.time.unwrap().start).collect();
+    assert_eq!(times, vec![10_000, 11_000, 12_000, 13_000]); // 4s / 1000 ticks
+    assert_eq!(primary(&segments[0]), "https://cdn.example.com/10000.m4s");
+}

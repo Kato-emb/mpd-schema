@@ -128,9 +128,8 @@ fn format_number(
     format: Option<&str>,
     invalid_format: &impl Fn() -> Error,
 ) -> Result<String, Error> {
-    let digits = value.to_string();
     let Some(format) = format else {
-        return Ok(digits);
+        return Ok(value.to_string());
     };
     let width_text = format.strip_suffix('d').ok_or_else(invalid_format)?;
     // DASH writes the zero-pad flag and width together (`05`); a bare width
@@ -142,6 +141,5 @@ fn format_number(
         return Err(invalid_format());
     }
     let width = width_text.parse::<usize>().unwrap_or(0);
-    let pad = width.saturating_sub(digits.len());
-    Ok(format!("{}{digits}", "0".repeat(pad)))
+    Ok(format!("{value:0width$}"))
 }

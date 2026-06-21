@@ -116,6 +116,7 @@ impl<'a> Resolver<'a> {
             .ok_or_else(|| stale_handle(handle))?;
         Ok(Located {
             period,
+            period_index: handle.period_index,
             adaptation_set,
             representation,
             path: handle.path(),
@@ -179,9 +180,36 @@ impl RepresentationHandle {
 
 struct Located<'a> {
     period: &'a Period,
+    period_index: usize,
     adaptation_set: &'a AdaptationSet,
     representation: &'a Representation,
     path: String,
+}
+
+impl Located<'_> {
+    fn overflow(&self) -> Error {
+        Error::new(self.path.clone(), ErrorKind::Overflow)
+    }
+
+    fn inconsistent(&self, reason: &str) -> Error {
+        Error::new(
+            self.path.clone(),
+            ErrorKind::InconsistentSegmentInfo {
+                reason: reason.to_string(),
+            },
+        )
+    }
+
+    fn join(&self, bases: &[CandidateUrl], relative: &str) -> Result<Vec<CandidateUrl>> {
+        join_all(bases, relative).ok_or_else(|| {
+            Error::new(
+                self.path.clone(),
+                ErrorKind::InvalidBaseUrl {
+                    value: relative.to_string(),
+                },
+            )
+        })
+    }
 }
 
 /// The resolved media segments of one Representation.
@@ -391,14 +419,7 @@ fn build_template_segments(
         sub_number: None,
     };
     let probe_relative = expand(media, &probe, &location.path)?;
-    if join_all(&bases, &probe_relative).is_none() {
-        return Err(Error::new(
-            location.path.clone(),
-            ErrorKind::InvalidBaseUrl {
-                value: probe_relative,
-            },
-        ));
-    }
+    location.join(&bases, &probe_relative)?;
 
     let timing = if let Some(timeline) = template.segment_timeline {
         Timing::Timeline {
@@ -408,12 +429,7 @@ fn build_template_segments(
         }
     } else if let Some(duration) = template.duration {
         if duration == 0 {
-            return Err(Error::new(
-                location.path.clone(),
-                ErrorKind::InconsistentSegmentInfo {
-                    reason: "segment duration is zero".to_string(),
-                },
-            ));
+            return Err(location.inconsistent("segment duration is zero"));
         }
         Timing::Duration {
             index: 0,
@@ -423,12 +439,9 @@ fn build_template_segments(
             presentation_time_offset: template.presentation_time_offset,
         }
     } else {
-        return Err(Error::new(
-            location.path.clone(),
-            ErrorKind::InconsistentSegmentInfo {
-                reason: "SegmentTemplate has neither a duration nor a SegmentTimeline".to_string(),
-            },
-        ));
+        return Err(
+            location.inconsistent("SegmentTemplate has neither a duration nor a SegmentTimeline")
+        );
     };
 
     Ok(Segments {
@@ -450,8 +463,17 @@ fn timeline_runs(
     location: &Located<'_>,
     mpd: &Mpd,
 ) -> Result<Vec<TimelineRun>> {
-    let overflow = || Error::new(location.path.clone(), ErrorKind::Overflow);
-    let period_end = period_end_ticks(location, mpd, template.timescale)?;
+    // `@t`, `presentationTimeOffset`, and the period boundary all live on the
+    // media timeline, so bound `r = -1` runs against `pto + periodLength`.
+    let media_period_end = match period_length_ticks(location, mpd, template.timescale)? {
+        Some(length) => Some(
+            template
+                .presentation_time_offset
+                .checked_add(length)
+                .ok_or_else(|| location.overflow())?,
+        ),
+        None => None,
+    };
     let mut runs = Vec::new();
     let mut current_time = template.presentation_time_offset;
     let mut current_number = template.start_number;
@@ -460,23 +482,23 @@ fn timeline_runs(
         if let Some(start) = segment.t {
             current_time = start;
         }
+        // `S@n` overrides the running number for this entry onward (DASH defines
+        // it as the number of the entry's first segment).
+        if let Some(number) = segment.n {
+            current_number = number;
+        }
         let duration = segment.d;
         let repeat_attribute = segment.r.unwrap_or(0);
         let repeat = if repeat_attribute >= 0 {
-            let extra = u64::try_from(repeat_attribute).map_err(|_| overflow())?;
-            Some(extra.checked_add(1).ok_or_else(overflow)?)
+            let extra = u64::try_from(repeat_attribute).map_err(|_| location.overflow())?;
+            Some(extra.checked_add(1).ok_or_else(|| location.overflow())?)
         } else {
             // `r = -1`: repeat to the next entry's start, else to the period
             // end, else forever.
-            repeat_until(
-                timeline
-                    .segments
-                    .get(index.checked_add(1).ok_or_else(overflow)?),
-                current_time,
-                duration,
-                period_end,
-                location,
-            )?
+            let next = timeline
+                .segments
+                .get(index.checked_add(1).ok_or_else(|| location.overflow())?);
+            repeat_until(next, current_time, duration, media_period_end, location)?
         };
         runs.push(TimelineRun {
             start_time: current_time,
@@ -486,9 +508,15 @@ fn timeline_runs(
         });
         match repeat {
             Some(count) => {
-                let span = count.checked_mul(duration).ok_or_else(overflow)?;
-                current_time = current_time.checked_add(span).ok_or_else(overflow)?;
-                current_number = current_number.checked_add(count).ok_or_else(overflow)?;
+                let span = count
+                    .checked_mul(duration)
+                    .ok_or_else(|| location.overflow())?;
+                current_time = current_time
+                    .checked_add(span)
+                    .ok_or_else(|| location.overflow())?;
+                current_number = current_number
+                    .checked_add(count)
+                    .ok_or_else(|| location.overflow())?;
             }
             None => break,
         }
@@ -500,26 +528,22 @@ fn repeat_until(
     next: Option<&S>,
     current_time: u64,
     duration: u64,
-    period_end: Option<u64>,
+    media_period_end: Option<u64>,
     location: &Located<'_>,
 ) -> Result<Option<u64>> {
-    let overflow = || Error::new(location.path.clone(), ErrorKind::Overflow);
     if duration == 0 {
-        return Err(Error::new(
-            location.path.clone(),
-            ErrorKind::InconsistentSegmentInfo {
-                reason: "SegmentTimeline entry has zero duration".to_string(),
-            },
-        ));
+        return Err(location.inconsistent("SegmentTimeline entry has zero duration"));
     }
     let boundary = match next.and_then(|entry| entry.t) {
         Some(next_start) => Some(next_start),
-        None => period_end,
+        None => media_period_end,
     };
     match boundary {
         Some(boundary) => {
-            let span = boundary.checked_sub(current_time).ok_or_else(overflow)?;
-            Some(checked_ceil_div(span, duration).ok_or_else(overflow)).transpose()
+            let span = boundary
+                .checked_sub(current_time)
+                .ok_or_else(|| location.inconsistent("SegmentTimeline extends past the period"))?;
+            Ok(Some(span.div_ceil(duration)))
         }
         None => Ok(None),
     }
@@ -531,32 +555,50 @@ fn duration_segment_count(
     timescale: u32,
     duration: u64,
 ) -> Result<Option<u64>> {
-    let overflow = || Error::new(location.path.clone(), ErrorKind::Overflow);
-    // `period_end_ticks` returns the period's *length* in ticks, so the count
-    // spans the whole period from zero regardless of `presentationTimeOffset`.
-    match period_end_ticks(location, mpd, timescale)? {
-        Some(span) => Ok(Some(checked_ceil_div(span, duration).ok_or_else(overflow)?)),
+    // The count spans the whole period length; start times then run
+    // `[pto, pto + periodLength)` on the media timeline.
+    match period_length_ticks(location, mpd, timescale)? {
+        Some(span) => Ok(Some(span.div_ceil(duration))),
         None => Ok(None),
     }
 }
 
-fn period_end_ticks(location: &Located<'_>, mpd: &Mpd, timescale: u32) -> Result<Option<u64>> {
-    let overflow = || Error::new(location.path.clone(), ErrorKind::Overflow);
+/// The period's length in ticks, or `None` for an open (live) period.
+///
+/// Derived from `Period@duration`, else the next Period's `@start`, else the
+/// presentation's `mediaPresentationDuration` minus this period's start.
+fn period_length_ticks(location: &Located<'_>, mpd: &Mpd, timescale: u32) -> Result<Option<u64>> {
     if let Some(duration) = location.period.duration {
         return Ok(Some(
-            duration_to_ticks(duration, timescale).ok_or_else(overflow)?,
+            duration_to_ticks(duration, timescale).ok_or_else(|| location.overflow())?,
         ));
     }
-    // Fall back to the media presentation duration for a single-period static
-    // MPD; otherwise the period is open.
-    if mpd.periods.len() == 1 {
-        if let Some(total) = mpd.media_presentation_duration {
-            return Ok(Some(
-                duration_to_ticks(total, timescale).ok_or_else(overflow)?,
-            ));
-        }
+    let this_start = period_start_ticks(location.period, timescale, location)?;
+    let next_index = location
+        .period_index
+        .checked_add(1)
+        .ok_or_else(|| location.overflow())?;
+    if let Some(next_start) = mpd.periods.get(next_index).and_then(|period| period.start) {
+        let next_start =
+            duration_to_ticks(next_start, timescale).ok_or_else(|| location.overflow())?;
+        return Ok(Some(next_start.checked_sub(this_start).ok_or_else(
+            || location.inconsistent("next Period starts before this one"),
+        )?));
+    }
+    if let Some(total) = mpd.media_presentation_duration {
+        let total = duration_to_ticks(total, timescale).ok_or_else(|| location.overflow())?;
+        return Ok(Some(total.checked_sub(this_start).ok_or_else(|| {
+            location.inconsistent("period starts after the presentation ends")
+        })?));
     }
     Ok(None)
+}
+
+fn period_start_ticks(period: &Period, timescale: u32, location: &Located<'_>) -> Result<u64> {
+    match period.start {
+        Some(start) => duration_to_ticks(start, timescale).ok_or_else(|| location.overflow()),
+        None => Ok(0),
+    }
 }
 
 fn duration_to_ticks(duration: XsDuration, timescale: u32) -> Option<u64> {
@@ -571,11 +613,6 @@ fn duration_to_ticks(duration: XsDuration, timescale: u32) -> Option<u64> {
     u64::try_from(whole.checked_add(fraction)?).ok()
 }
 
-fn checked_ceil_div(numerator: u64, denominator: u64) -> Option<u64> {
-    let adjusted = numerator.checked_add(denominator.checked_sub(1)?)?;
-    adjusted.checked_div(denominator)
-}
-
 fn build_list_segments(
     location: &Located<'_>,
     bases: &[CandidateUrl],
@@ -583,21 +620,13 @@ fn build_list_segments(
 ) -> Result<Segments> {
     let mut segments = Vec::new();
     for (index, segment_url) in list.segment_urls.iter().enumerate() {
-        let index_u64 = u64::try_from(index)
-            .map_err(|_| Error::new(location.path.clone(), ErrorKind::Overflow))?;
+        let index_u64 = u64::try_from(index).map_err(|_| location.overflow())?;
         let number = list
             .start_number
             .checked_add(index_u64)
-            .ok_or_else(|| Error::new(location.path.clone(), ErrorKind::Overflow))?;
+            .ok_or_else(|| location.overflow())?;
         let urls = match &segment_url.media {
-            Some(media) => join_all(bases, media).ok_or_else(|| {
-                Error::new(
-                    location.path.clone(),
-                    ErrorKind::InvalidBaseUrl {
-                        value: media.clone(),
-                    },
-                )
-            })?,
+            Some(media) => location.join(bases, media)?,
             None => bases.to_vec(),
         };
         let mut segment = ResolvedSegment::new(urls);
@@ -608,7 +637,7 @@ fn build_list_segments(
         if let Some(duration) = list.duration {
             let start = index_u64
                 .checked_mul(duration)
-                .ok_or_else(|| Error::new(location.path.clone(), ErrorKind::Overflow))?;
+                .ok_or_else(|| location.overflow())?;
             segment.time = Some(SegmentTime::new(start, duration, list.timescale));
         }
         segments.push(segment);
@@ -632,12 +661,7 @@ fn build_initialization(
                 sub_number: None,
             };
             let relative = expand(initialization, &values, &location.path)?;
-            let urls = join_all(bases, &relative).ok_or_else(|| {
-                Error::new(
-                    location.path.clone(),
-                    ErrorKind::InvalidBaseUrl { value: relative },
-                )
-            })?;
+            let urls = location.join(bases, &relative)?;
             return Ok(Some(ResolvedSegment::new(urls)));
         }
         // Fall through to the URL-child initialization on the embedded base.
@@ -661,14 +685,7 @@ fn initialization_from_url_child(
         return Ok(None);
     };
     let urls = match &initialization.source_url {
-        Some(source_url) => join_all(bases, source_url).ok_or_else(|| {
-            Error::new(
-                location.path.clone(),
-                ErrorKind::InvalidBaseUrl {
-                    value: source_url.clone(),
-                },
-            )
-        })?,
+        Some(source_url) => location.join(bases, source_url)?,
         None => bases.to_vec(),
     };
     let mut segment = ResolvedSegment::new(urls);
