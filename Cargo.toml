@@ -1,12 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/mpd-schema", "crates/mpd-resolve"]
-
-[workspace.dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
-url = "2.5"
-mpd-schema = { version = "0.1.0", path = "crates/mpd-schema" }
-mpd-resolve = { version = "0.1.0", path = "crates/mpd-resolve" }
+members = ["crates/*", "xtask"]
 
 [workspace.package]
 edition = "2024"
@@ -15,6 +9,12 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Kato-emb/mpd-schema"
 readme = "README.md"
+
+[workspace.dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+url = "2.5"
+mpd-schema = { version = "0.1.0", path = "crates/mpd-schema" }
+mpd-resolve = { version = "0.1.0", path = "crates/mpd-resolve" }
 
 # Rust lints. CI が -D warnings で warning を error に昇格させる。
 [workspace.lints.rust]
