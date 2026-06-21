@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/mpd-schema"]
+members = ["crates/mpd-schema", "crates/mpd-resolve"]
+
+[workspace.dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+url = "2.5"
+mpd-schema = { version = "0.1.0", path = "crates/mpd-schema" }
+mpd-resolve = { version = "0.1.0", path = "crates/mpd-resolve" }
 
 [workspace.package]
 edition = "2024"

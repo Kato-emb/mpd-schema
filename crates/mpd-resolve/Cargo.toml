@@ -1,16 +1,16 @@
 [package]
-name = "mpd-schema"
+name = "mpd-resolve"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme.workspace = true
-description = "Bidirectional conversion between MPEG-DASH MPD documents and Rust structs"
+description = "Semantic resolution of MPEG-DASH MPD documents: BaseURL hierarchy and segment template expansion"
 
 [dependencies]
-chrono = { workspace = true }
-quick-xml = "0.40.1"
+mpd-schema = { workspace = true }
+url = { workspace = true }
 
 [lints]
 workspace = true
