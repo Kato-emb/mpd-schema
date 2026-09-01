@@ -10,7 +10,7 @@ description = "Bidirectional conversion between MPEG-DASH MPD documents and Rust
 
 [dependencies]
 chrono = { workspace = true }
-quick-xml = "0.40.1"
+quick-xml = "0.41.0"
 
 [lints]
 workspace = true
